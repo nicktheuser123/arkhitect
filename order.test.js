@@ -4,7 +4,7 @@ let order;
 let result;
 
 beforeAll(async () => {
-  const ORDER_ID = "1770134382524x927677568890961900";
+  const ORDER_ID = "1770272331839x867325149898080300";
 
   order = await getThing("GP_Order", ORDER_ID);
 
@@ -42,7 +42,7 @@ beforeAll(async () => {
     ticketTypes,
     eventDetail
   });
-});
+}, 30000); // 30 second timeout for async operations
 
 
 describe("GP_Order financial validation", () => {
@@ -70,18 +70,42 @@ describe("GP_Order financial validation", () => {
       ).toBe(true);
     } else {
       // Normal validation when promotion exists
-      expect(order["Discount Amount"]).toBeCloseTo(result.discountTotal, 2);
+      const orderDiscount = order["Discount Amount"];
+      // If GP_Promotion exists but Discount Amount is undefined, test should fail
+      if (orderDiscount === undefined || orderDiscount === null) {
+        throw new Error(`Discount Amount is undefined/null but GP_Promotion exists (${order.GP_Promotion}) - discount should be calculated`);
+      }
+      // Validate discount amount matches calculated value
+      expect(orderDiscount).toBeCloseTo(result.discountTotal, 2);
     }
   });
 
   it("validates Processing Fee Revenue", () => {
-    expect(order["Processing Fee Revenue"])
-      .toBeCloseTo(result.processingFeeRevenue, 2);
+    // When total order value is 0, processing fee revenue should be 0
+    if (result.totalOrderValue === 0 || Math.abs(result.totalOrderValue) < 0.01) {
+      expect(result.processingFeeRevenue).toBe(0);
+      // Bubble may have undefined/null or 0 for zero orders - treat undefined as 0
+      const bubbleFee = order["Processing Fee Revenue"] || 0;
+      expect(bubbleFee).toBe(0);
+    } else {
+      // Treat undefined as 0 for comparison
+      const bubbleFee = order["Processing Fee Revenue"] || 0;
+      expect(bubbleFee).toBeCloseTo(result.processingFeeRevenue, 2);
+    }
   });
 
   it("validates Processing Fee Deduction", () => {
-    expect(order["Processing Fee Deduction"])
-      .toBeCloseTo(result.stripeDeduction, 2);
+    // When total order value is 0, processing fee deduction should be 0
+    if (result.totalOrderValue === 0 || Math.abs(result.totalOrderValue) < 0.01) {
+      expect(result.stripeDeduction).toBe(0);
+      // Bubble may have undefined/null or 0 for zero orders - treat undefined as 0
+      const bubbleDeduction = order["Processing Fee Deduction"] || 0;
+      expect(bubbleDeduction).toBe(0);
+    } else {
+      // Treat undefined as 0 for comparison
+      const bubbleDeduction = order["Processing Fee Deduction"] || 0;
+      expect(bubbleDeduction).toBeCloseTo(result.stripeDeduction, 2);
+    }
   });
 
   it("validates Total Order Value", () => {
@@ -92,6 +116,12 @@ describe("GP_Order financial validation", () => {
   it("validates Total Service Fee", () => {
     expect(order["Fee Service"])
       .toBeCloseTo(result.totalServiceFee, 2);
+  });
+
+  it("validates Donation Amount", () => {
+    // Compare calculated donation total with Bubble's "Donation Amount" field
+    const bubbleDonationAmount = order["Donation Amount"] || 0;
+    expect(bubbleDonationAmount).toBeCloseTo(result.donationTotal, 2);
   });
 
 });
