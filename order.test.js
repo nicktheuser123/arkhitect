@@ -2,9 +2,10 @@ const { getThing } = require("./bubbleClient");
 const { calculateOrder } = require("./orderCalculator");
 let order;
 let result;
+let orderFees = [];
 
 beforeAll(async () => {
-  const ORDER_ID = "1770272331839x867325149898080300";
+  const ORDER_ID = "1770356828110x850369838107852800";
 
   order = await getThing("GP_Order", ORDER_ID);
 
@@ -35,12 +36,37 @@ beforeAll(async () => {
     }
   }
 
+  // Fetch custom fees
+  const customFeeTypes = {};
+  if (order["GP_CustomFees"] && Array.isArray(order["GP_CustomFees"])) {
+    const customFeeTypePromises = order["GP_CustomFees"].map(id => 
+      getThing("GP_CustomFeeType", id)
+    );
+    const fetchedCustomFeeTypes = await Promise.all(customFeeTypePromises);
+    fetchedCustomFeeTypes.forEach(customFeeType => {
+      customFeeTypes[customFeeType._id] = customFeeType;
+    });
+  }
+
+  // Fetch GP_OrderFee entries from each addOn's GP_OrderFee field
+  orderFees = [];
+  for (const addOn of addOns) {
+    if (addOn["GP_OrderFee"] && Array.isArray(addOn["GP_OrderFee"])) {
+      const orderFeePromises = addOn["GP_OrderFee"].map(id => 
+        getThing("GP_OrderFee", id)
+      );
+      orderFees.push(...await Promise.all(orderFeePromises));
+    }
+  }
+
   result = calculateOrder({
     order,
     addOns,
     promotion,
     ticketTypes,
-    eventDetail
+    eventDetail,
+    customFeeTypes,
+    orderFees
   });
 }, 30000); // 30 second timeout for async operations
 
@@ -122,6 +148,17 @@ describe("GP_Order financial validation", () => {
     // Compare calculated donation total with Bubble's "Donation Amount" field
     const bubbleDonationAmount = order["Donation Amount"] || 0;
     expect(bubbleDonationAmount).toBeCloseTo(result.donationTotal, 2);
+  });
+
+  it("validates Custom Fees", () => {
+    // Sum all GP_OrderFee amounts from Bubble
+    const bubbleCustomFeesTotal = orderFees.reduce((sum, orderFee) => {
+      const feeAmount = orderFee["GP_OrderFee Amt"] || 0;
+      return sum + feeAmount;
+    }, 0);
+    
+    // Compare with our calculated total custom fees
+    expect(bubbleCustomFeesTotal).toBeCloseTo(result.totalCustomFees, 2);
   });
 
 });

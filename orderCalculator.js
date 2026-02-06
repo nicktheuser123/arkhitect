@@ -5,7 +5,9 @@ function calculateOrder({
   addOns,
   promotion,
   ticketTypes,
-  eventDetail
+  eventDetail,
+  customFeeTypes = {},
+  orderFees = []
 }) {
   let ticketCount = 0;
   // Gross amount is (ticket price * qty + service fee) WITHOUT discount deduction
@@ -15,7 +17,11 @@ function calculateOrder({
   let discountTotal = 0;
   let totalServiceFee = 0; // Track total service fee across all addOns
   let donationTotal = 0; // Track total donations
+  let totalCustomFees = 0; // Track total custom fees
   let discountAppliedToOrder = false; // Track if discount has been applied to this order
+  
+  // Track final prices per addOn for custom fee calculation
+  const addOnFinalPrices = {};
 
   logSection("ORDER CALCULATION START");
 
@@ -99,6 +105,9 @@ addOns.forEach((addOn, index) => {
 
   grossAmount += addOnGross;
   finalAmount += addOnFinal;
+  
+  // Store final price for this addOn (for custom fee calculation)
+  addOnFinalPrices[addOn._id] = addOnFinal;
 
   console.log(`\nAddOn #${index + 1} (Ticket)`);
   console.log("AddOn ID:", addOn._id);
@@ -111,6 +120,66 @@ addOns.forEach((addOn, index) => {
   console.log("AddOn Final (after discount):", money(addOnFinal));
 });
 
+  // Calculate custom fees for each Ticket addOn
+  // Custom fees are calculated after discounts are applied
+  logSection("CUSTOM FEES");
+  
+  const ticketAddOns = addOns.filter(addOn => addOn["OS AddOnType"] === "Ticket");
+  
+  if (Object.keys(customFeeTypes).length > 0 && ticketAddOns.length > 0) {
+    console.log(`Calculating custom fees for ${ticketAddOns.length} ticket addOn(s)`);
+    
+    // Count valid ticket addOns (those with non-zero final price)
+    const validTicketAddOns = ticketAddOns.filter(addOn => {
+      const addOnFinalPrice = addOnFinalPrices[addOn._id] || 0;
+      return addOnFinalPrice !== 0 && Math.abs(addOnFinalPrice) >= 0.01;
+    });
+    const validAddOnCount = validTicketAddOns.length;
+    
+    // For each custom fee type
+    Object.values(customFeeTypes).forEach(customFeeType => {
+      const feeType = customFeeType.Type; // "Percentage" or "Fixed"
+      const feeAmount = customFeeType["Fee Amount"] || 0;
+      
+      console.log(`\nCustom Fee Type: ${customFeeType._id}`);
+      console.log(`  Type: ${feeType}`);
+      console.log(`  Fee Amount: ${feeAmount}`);
+      
+      // For Fixed fees, divide the amount across all valid ticket addOns
+      const fixedFeePerAddOn = feeType === "Fixed" && validAddOnCount > 0 
+        ? feeAmount / validAddOnCount 
+        : feeAmount;
+      
+      // For each Ticket addOn, calculate the custom fee
+      ticketAddOns.forEach(addOn => {
+        const addOnFinalPrice = addOnFinalPrices[addOn._id] || 0;
+        
+        // If ticket total is $0, no fees will be added
+        if (addOnFinalPrice === 0 || Math.abs(addOnFinalPrice) < 0.01) {
+          console.log(`  AddOn ${addOn._id}: Final price is 0, skipping custom fee`);
+          return;
+        }
+        
+        let customFeeAmount = 0;
+        
+        if (feeType === "Percentage") {
+          // Percentage: Fee Amount is already divided by 100, calculate on Final Price
+          customFeeAmount = addOnFinalPrice * feeAmount;
+        } else if (feeType === "Fixed") {
+          // Fixed: Fee Amount is divided across all valid ticket addOns
+          customFeeAmount = fixedFeePerAddOn;
+        }
+        
+        totalCustomFees += customFeeAmount;
+        
+        console.log(`  AddOn ${addOn._id}: Final Price = ${money(addOnFinalPrice)}, Custom Fee = ${money(customFeeAmount)}`);
+      });
+    });
+    
+    console.log(`\nTotal Custom Fees: ${money(totalCustomFees)}`);
+  } else {
+    console.log("No custom fees to calculate");
+  }
 
   logSection("FEES");
 
@@ -141,8 +210,8 @@ addOns.forEach((addOn, index) => {
     // In "No Processing Fee" mode, Bubble's Total Order Value excludes processing fees
     // AND does not get "grossed up" to cover Stripe. The customer pays the finalAmount,
     // and Stripe deduction is calculated separately on that charged amount.
-    // Donations are added to totalOrderValue but NOT included in processingFeeRevenue calculation
-    totalOrderValue = finalAmount + donationTotal;
+    // Donations and custom fees are added to totalOrderValue but NOT included in processingFeeRevenue calculation
+    totalOrderValue = finalAmount + donationTotal + totalCustomFees;
 
     // Stripe deduction is calculated on the charged total (including donations).
     stripeDeduction = (totalOrderValue * 0.029) + 0.3;
@@ -180,31 +249,26 @@ addOns.forEach((addOn, index) => {
       throw new Error(`Invalid processing fee percentage: ${processingFeePct}. Denominator would be ${denominator}`);
     }
     
-    // Calculate base totalOrderValue for tickets only (for processing fee calculation)
-    // This already accounts for Stripe deduction on the tickets portion
+    // Calculate base totalOrderValue for tickets + custom fees (for processing fee calculation)
+    // Custom fees are included in total and may affect processing fee
+    // This already accounts for Stripe deduction on the tickets + custom fees portion
+    // Note: totalOrderValueBase already includes custom fees grossed up, so don't add them again
     const totalOrderValueBase =
-      (finalAmount + processingFeeFixed + 0.3) / denominator;
+      (finalAmount + totalCustomFees + processingFeeFixed + 0.3) / denominator;
 
-    // Processing fee revenue is calculated on base totalOrderValue (excluding donations)
+    // Processing fee revenue is calculated on base totalOrderValue (excluding donations, including custom fees)
     processingFeeRevenue =
       processingFeeFixed +
       (totalOrderValueBase * processingFeePct);
 
     // Total order value calculation:
-    // - Tickets portion: already grossed up for Stripe in totalOrderValueBase
+    // - Tickets + Custom Fees: already grossed up for Stripe in totalOrderValueBase
     // - Donations: need to be grossed up for Stripe too
-    // Formula for donations: donationGrossedUp = (donationTotal + 0.3) / 0.971
-    // But wait, we already have 0.3 in the base calculation...
-    // Actually, donations should be added and then the total should account for Stripe
-    // Let's try: totalOrderValue = (totalOrderValueBase - baseStripe) + donations, then gross up total
-    // Or simpler: totalOrderValue = totalOrderValueBase + (donationTotal / 0.971)
-    
     // Calculate donations grossed up for Stripe (they need their own Stripe fee)
-    // But we need to account for the fact that 0.3 is already in the base calculation
-    // So we calculate: donationGrossedUp = donationTotal / 0.971
     const donationGrossedUp = donationTotal / 0.971;
     
-    // Total order value = tickets base + donations grossed up
+    // Total order value = tickets + custom fees base (already grossed up) + donations grossed up
+    // Note: Custom fees are already included in totalOrderValueBase, so we don't add them again
     totalOrderValue = totalOrderValueBase + donationGrossedUp;
 
     // Stripe deduction is calculated on totalOrderValue (including donations)
@@ -222,6 +286,7 @@ addOns.forEach((addOn, index) => {
   console.log("Ticket Count:", ticketCount);
   console.log("Total Service Fee:", money(totalServiceFee));
   console.log("Donation Total:", money(donationTotal));
+  console.log("Total Custom Fees:", money(totalCustomFees));
   console.log("Gross Amount (before discount):", money(grossAmount));
   console.log("Final Amount (after discount):", money(finalAmount));
   console.log("Discount Total (calculated):", money(discountTotal));
@@ -238,6 +303,7 @@ addOns.forEach((addOn, index) => {
     grossAmount,
     totalServiceFee,
     donationTotal,
+    totalCustomFees,
     discountTotal,
     processingFeeRevenue,
     stripeDeduction,
