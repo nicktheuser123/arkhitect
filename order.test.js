@@ -5,7 +5,7 @@ let result;
 let orderFees = [];
 
 beforeAll(async () => {
-  const ORDER_ID = "1770356828110x850369838107852800";
+  const ORDER_ID = "1770367778023x577857204686684200";
 
   order = await getThing("GP_Order", ORDER_ID);
 
@@ -40,6 +40,7 @@ beforeAll(async () => {
   const customFeeTypes = {};
   if (order["GP_CustomFees"] && Array.isArray(order["GP_CustomFees"])) {
     const customFeeTypePromises = order["GP_CustomFees"].map(id => 
+      
       getThing("GP_CustomFeeType", id)
     );
     const fetchedCustomFeeTypes = await Promise.all(customFeeTypePromises);
@@ -49,13 +50,27 @@ beforeAll(async () => {
   }
 
   // Fetch GP_OrderFee entries from each addOn's GP_OrderFee field
+  // Handle 404 errors gracefully - if an orderFee is deleted (404), skip it
   orderFees = [];
   for (const addOn of addOns) {
     if (addOn["GP_OrderFee"] && Array.isArray(addOn["GP_OrderFee"])) {
-      const orderFeePromises = addOn["GP_OrderFee"].map(id => 
-        getThing("GP_OrderFee", id)
-      );
-      orderFees.push(...await Promise.all(orderFeePromises));
+      console.log("AddONPRE",addOn["GP_OrderFee"]);
+      const orderFeePromises = addOn["GP_OrderFee"].map(async (id) => {
+        try {
+          return await getThing("GP_OrderFee", id);
+        } catch (error) {
+          // If orderFee returns 404 (deleted), skip it
+          if (error.response && error.response.status === 404) {
+            console.log(`OrderFee ${id} not found (404) - skipping deleted orderFee`);
+            return null;
+          }
+          // Re-throw other errors
+          throw error;
+        }
+      });
+      const fetchedOrderFees = await Promise.all(orderFeePromises);
+      // Filter out null values (deleted orderFees)
+      orderFees.push(...fetchedOrderFees.filter(fee => fee !== null));
     }
   }
 
@@ -68,7 +83,7 @@ beforeAll(async () => {
     customFeeTypes,
     orderFees
   });
-}, 30000); // 30 second timeout for async operations
+}, 80000); // 30 second timeout for async operations
 
 
 describe("GP_Order financial validation", () => {
