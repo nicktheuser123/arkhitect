@@ -23,14 +23,28 @@ function calculateOrder({
   let totalServiceFee = 0; // Track total service fee across all addOns
   let donationTotal = 0; // Track total donations
   let totalCustomFees = 0; // Track total custom fees
-  // For Discount Amount type, track remaining discount to distribute across addons
-  let remainingDiscountAmount = 0;
+
+  // For Discount Amount type: precompute total of all applicable ticket prices (weighted distribution)
+  let totalApplicableTicketSum = 0;
   if (promotion && promotion["OS GP Promotion Type"] === "Discount Amount") {
-    remainingDiscountAmount = promotion.DiscountAmt || 0;
+    addOns.forEach((addOn) => {
+      if (addOn["OS AddOnType"] !== "Ticket") return;
+      const tt = ticketTypes[addOn.GP_TicketType];
+      if (!tt || !tt.GP_Promotions?.includes(promotion._id)) return;
+      totalApplicableTicketSum += (tt.Price || 0) * (addOn.Quantity || 0);
+    });
+    console.log("Discount Amount (flat): total applicable ticket sum =", money(totalApplicableTicketSum), ", discount amount =", money(promotion.DiscountAmt || 0));
   }
-  
+
   // Track final prices per addOn for custom fee calculation
   const addOnFinalPrices = {};
+
+  // Payment provider deduction (PFD): % and fixed amount per transaction
+  // Stripe: 2.9% + $0.30; Authorize.NET: 0% + $0.05
+  const paymentProvider = order["OS Payment Provider"] || "Stripe";
+  const pfdPercentage = paymentProvider === "Authorize.NET" ? 0 : 0.029;
+  const pfdFixed = paymentProvider === "Authorize.NET" ? 0.05 : 0.30;
+  console.log("OS Payment Provider:", paymentProvider, `(PFD: ${(pfdPercentage * 100).toFixed(2)}% + $${pfdFixed.toFixed(2)})`);
 
   logSection("ORDER CALCULATION START");
 
@@ -81,12 +95,13 @@ addOns.forEach((addOn, index) => {
     ticketType.GP_Promotions?.includes(promotion._id)
   ) {
     if (promotion["OS GP Promotion Type"] === "Discount Amount") {
-      // Fixed amount discounts are distributed across eligible addons
-      // Apply discount up to the ticket total for this addon, or remaining discount amount, whichever is smaller
-      if (remainingDiscountAmount > 0) {
-        discount = Math.min(remainingDiscountAmount, addOnTicketTotal);
-        remainingDiscountAmount -= discount;
-        console.log(`  → Applying Discount Amount: ${money(discount)} to this addon (ticket total: ${money(addOnTicketTotal)}, remaining: ${money(remainingDiscountAmount)})`);
+      // Weighted distribution: (this addon ticket total / total applicable ticket sum) * min(discount amount, total applicable ticket sum)
+      const discountAmount = promotion.DiscountAmt || 0;
+      const amountToDistribute = Math.min(discountAmount, totalApplicableTicketSum);
+      if (totalApplicableTicketSum > 0 && amountToDistribute > 0) {
+        const weight = addOnTicketTotal / totalApplicableTicketSum;
+        discount = roundTo2(Math.min(weight * amountToDistribute, addOnTicketTotal));
+        console.log(`  → Applying Discount Amount (weighted): weight ${(weight * 100).toFixed(2)}% (${money(addOnTicketTotal)}/${money(totalApplicableTicketSum)}) × ${money(amountToDistribute)} = ${money(discount)}`);
       }
     }
 
@@ -103,9 +118,10 @@ addOns.forEach((addOn, index) => {
 
   discountTotal += discount;
 
-  // Get service fee per ticket from GP_TicketType, default to 2 if not specified
+  // Get service fee per ticket from GP_TicketType, default to 2 if missing/null/undefined
   // However, if ticket price is 0, service fee is also 0
-  const serviceFeePerTicket = ticketPrice === 0 ? 0 : (ticketType["Service Fee"] || 2);
+  // If Service Fee is explicitly 0, use 0 (don't default to 2)
+  const serviceFeePerTicket = ticketPrice === 0 ? 0 : (ticketType["Service Fee"] ?? 2);
 
   // If discount covers the entire ticket price (discount >= ticket total), service fee and final price are both 0
   let serviceFee = 0;
@@ -235,8 +251,8 @@ addOns.forEach((addOn, index) => {
     // Donations and custom fees are added to totalOrderValue but NOT included in processingFeeRevenue calculation
     totalOrderValue = finalAmount + donationTotal + totalCustomFees;
 
-    // Stripe deduction is calculated on the charged total (including donations).
-    stripeDeduction = (totalOrderValue * 0.029) + 0.3;
+    // Payment provider deduction is calculated on the charged total (including donations).
+    stripeDeduction = (totalOrderValue * pfdPercentage) + pfdFixed;
   } else {
     // Processing fee revenue is calculated on totalOrderValue (similar to Stripe deduction)
     // This creates a circular dependency that we solve algebraically:
@@ -266,7 +282,7 @@ addOns.forEach((addOn, index) => {
     // 1. Calculate base order value for tickets (with processing fees, grossed up for Stripe)
     // 2. Add donations to get total order value
     // 3. Calculate Stripe deduction on the total (including donations)
-    const denominator = 0.971 - processingFeePct;
+    const denominator = (1 - pfdPercentage) - processingFeePct;
     if (denominator <= 0) {
       throw new Error(`Invalid processing fee percentage: ${processingFeePct}. Denominator would be ${denominator}`);
     }
@@ -277,19 +293,21 @@ addOns.forEach((addOn, index) => {
     
     // Step 1: Calculate donation fee separately
     // Formula: ((Donation Amount + 0) / (1 - PFD%)) × PFD %
-    // PFD% = 0.029 (Stripe's 2.9%)
-    const donationFee = roundTo2((donationTotal / (1 - 0.029)) * 0.029);
+    const donationFeeDenom = 1 - pfdPercentage;
+    const donationFee = donationFeeDenom > 0
+      ? roundTo2((donationTotal / donationFeeDenom) * pfdPercentage)
+      : 0;
     console.log("Donation Fee (calculated separately):", money(donationFee));
     
     // Step 2: Calculate base for total processing fee
     // Base = [Order total (tickets+service-discounts) + (PFD $ + PFR $) + Custom Fees] / [1 - (PFD % + PFR %)]
     // Order total = finalAmount (tickets + service fees - discounts)
-    // PFD $ = 0.30 (Stripe's fixed fee)
+    // PFD $ = pfdFixed (Stripe $0.30 or Authorize.NET $0.05)
     // PFR $ = processingFeeFixed
-    // PFD % = 0.029
+    // PFD % = pfdPercentage (Stripe 2.9% or Authorize.NET 0%)
     // PFR % = processingFeePct
-    const combinedPercentage = 0.029 + processingFeePct; // PFD % + PFR %
-    const combinedFixed = 0.30 + processingFeeFixed; // PFD $ + PFR $
+    const combinedPercentage = pfdPercentage + processingFeePct; // PFD % + PFR %
+    const combinedFixed = pfdFixed + processingFeeFixed; // PFD $ + PFR $
     const baseDenominator = 1 - combinedPercentage;
     
     if (baseDenominator <= 0) {
@@ -309,10 +327,10 @@ addOns.forEach((addOn, index) => {
     // Step 4: Total order value = finalAmount + totalCustomFees + totalProcessingFee + donationTotal
     totalOrderValue = finalAmount + totalCustomFees + totalProcessingFee + donationTotal;
     
-    // Step 5: Stripe deduction (PFD) on total order value (amount charged to customer)
+    // Step 5: Payment provider deduction (PFD) on total order value (amount charged to customer)
     // Bubble: round the percentage part first, then add fixed fee
-    const pfdPercentagePart = roundTo2(totalOrderValue * 0.029);
-    stripeDeduction = pfdPercentagePart + 0.30;
+    const pfdPercentagePart = roundTo2(totalOrderValue * pfdPercentage);
+    stripeDeduction = pfdPercentagePart + pfdFixed;
     console.log("PFD (on total order value):", money(stripeDeduction));
     
     // Step 6: Processing Fee Revenue = Total processing fee - PFD (do not round)
@@ -324,7 +342,7 @@ addOns.forEach((addOn, index) => {
   console.log("Processing Fee $ (event):", money(eventDetail["Processing Fee $"]));
   console.log("Processing Fee % (event):", eventDetail["Processing Fee %"]);
   console.log("Processing Fee Revenue:", money(processingFeeRevenue));
-  console.log("Stripe Deduction (2.9% + 0.30):", money(stripeDeduction));
+  console.log("Processing Fee Deduction (PFD):", money(stripeDeduction), `(${paymentProvider}: ${(pfdPercentage * 100).toFixed(2)}% + $${pfdFixed.toFixed(2)})`);
 
   logSection("TOTALS");
 
