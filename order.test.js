@@ -1,11 +1,13 @@
 const { getThing } = require("./bubbleClient");
 const { calculateOrder } = require("./orderCalculator");
+const { ORDER_ID, RUN_ORDER_TESTS } = require("./testConfig");
+
 let order;
 let result;
 let orderFees = [];
 
 beforeAll(async () => {
-  const ORDER_ID = "1771469251238x233557141462450180";
+  if (!RUN_ORDER_TESTS) return;
 
   order = await getThing("GP_Order", ORDER_ID);
 
@@ -83,10 +85,41 @@ beforeAll(async () => {
     customFeeTypes,
     orderFees
   });
+
+  console.log("\n==============================");
+  console.log("ORDER VALIDATION - OURS vs BUBBLE");
+  console.log("==============================");
+  const fmt = (n) => (n == null || n === "" ? "N/A" : Number(n).toFixed(2));
+  const row = (label, ours, bubble) =>
+    console.log(`${label.padEnd(28)} | Ours: ${String(fmt(ours)).padStart(12)} | Bubble: ${String(fmt(bubble)).padStart(12)}`);
+  const bubbleCustomFees = orderFees.reduce((s, f) => s + (f["GP_OrderFee Amt"] || 0), 0);
+  const finalAmount = result.grossAmount + result.totalServiceFee - result.discountTotal;
+  const grossRevenue = result.totalOrderValue + result.discountTotal;
+  const netRevenue = result.totalOrderValue + result.discountTotal - result.stripeDeduction;
+  const totalFees = result.processingFeeRevenue + result.totalServiceFee + result.totalCustomFees;
+  const bubbleFinalAmount = (order["Gross Amount"] ?? 0) + (order["Fee Service"] ?? 0) - (order["Discount Amount"] ?? 0);
+  const bubbleGrossRevenue = (order["Total Order Value"] ?? 0) + (order["Discount Amount"] ?? 0);
+  const bubbleNetRevenue = (order["Total Order Value"] ?? 0) + (order["Discount Amount"] ?? 0) - (order["Processing Fee Deduction"] ?? 0);
+  const bubbleTotalFees = (order["Processing Fee Revenue"] ?? 0) + (order["Fee Service"] ?? 0) + bubbleCustomFees;
+
+  row("Ticket Count", result.ticketCount, order["Ticket Count"]);
+  row("Gross Amount", result.grossAmount, order["Gross Amount"]);
+  row("Final Amount (ticket+service-discount)", finalAmount, bubbleFinalAmount);
+  row("Discount Total", result.discountTotal, order["Discount Amount"]);
+  row("Total Service Fee", result.totalServiceFee, order["Fee Service"]);
+  row("Total Order Value", result.totalOrderValue, order["Total Order Value"]);
+  row("Gross Revenue (TOV + discount)", grossRevenue, bubbleGrossRevenue);
+  row("Net Revenue (TOV + discount - PFD)", netRevenue, bubbleNetRevenue);
+  row("Processing Fee Revenue", result.processingFeeRevenue, order["Processing Fee Revenue"]);
+  row("Processing Fee Deduction", result.stripeDeduction, order["Processing Fee Deduction"]);
+  row("Total Fees (PFR + service + custom)", totalFees, bubbleTotalFees);
+  row("Donation Total", result.donationTotal, order["Donation Amount"]);
+  row("Total Custom Fees", result.totalCustomFees, bubbleCustomFees);
+  console.log("==============================\n");
 }, 80000); // 30 second timeout for async operations
 
 
-describe("GP_Order financial validation", () => {
+(RUN_ORDER_TESTS ? describe : describe.skip)("GP_Order financial validation", () => {
 
   it("validates Ticket Count", () => {
     expect(order["Ticket Count"]).toBe(result.ticketCount);
