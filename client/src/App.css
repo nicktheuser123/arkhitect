@@ -1,0 +1,345 @@
+/* Minimalist Arkhitect UI - Full width */
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --success: #3fb950;
+  --error: #f85149;
+  --warn: #d29922;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Mono", monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Full-width layout */
+.layout {
+  width: 100%;
+  max-width: none;
+  padding: 1.5rem 2rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    padding: 1rem;
+  }
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+.tabs button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tabs button:hover {
+  color: var(--text);
+}
+
+.tabs button.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.sub-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.sub-tabs button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  border-radius: 4px;
+}
+
+.sub-tabs button:hover {
+  color: var(--text);
+}
+
+.sub-tabs button.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.08);
+}
+
+/* VS Code-style overlay scrollbars - invisible until scroll */
+.scrollbar-overlay {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.scrollbar-overlay::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.scrollbar-overlay::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Three-panel Validator layout */
+.validator-three-panel {
+  width: 100%;
+}
+
+.validator-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Form elements */
+input, select, textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  font-size: 14px;
+  font-family: inherit;
+  border-radius: 4px;
+  width: 100%;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+label {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.btn:hover {
+  opacity: 0.9;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Logs / output */
+.log-output {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1rem;
+  font-family: "SF Mono", Monaco, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  max-height: 400px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.log-output::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-output::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.log-output::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.log-output::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+
+.result-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 13px;
+}
+
+.result-table th,
+.result-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  word-break: break-word;
+}
+
+.result-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.result-table .pass {
+  color: var(--success);
+}
+
+.result-table .fail {
+  color: var(--error);
+}
+
+.summary {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.summary span {
+  color: var(--text-muted);
+}
+
+.summary .passed { color: var(--success); }
+.summary .failed { color: var(--error); }
+
+/* Plan view markdown */
+.plan-view-content h2 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 1rem 0 0.5rem 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-view-content h2:first-child {
+  margin-top: 0;
+}
+
+.plan-view-content h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0.75rem 0 0.25rem 0;
+}
+
+.plan-view-content p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0.25rem 0;
+}
+
+.plan-view-content ul, .plan-view-content ol {
+  font-size: 13px;
+  line-height: 1.6;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+.plan-view-content li {
+  margin-bottom: 0.15rem;
+}
+
+.plan-view-content code {
+  background: var(--bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.plan-view-content pre {
+  background: var(--bg);
+  padding: 0.75rem;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow-x: auto;
+}
+
+.plan-view-content strong {
+  color: var(--text);
+}

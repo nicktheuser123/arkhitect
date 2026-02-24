@@ -20,6 +20,7 @@ async function getThing(type, id) {
  * @param {number} limit - Max items per request (default 100)
  * @returns {Promise<Array>} All matching records
  */
+
 async function searchThings(type, constraints, limit = 100) {
   const all = [];
   let cursor = 0;

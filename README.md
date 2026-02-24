@@ -1,76 +1,50 @@
-# Order Validation
+# Arkhitect
 
-Validates GP_Order financial calculations against Bubble API data. Uses Jest for testing and fetches order, add-on, and event data from the Bubble API.
+Validates GP_Order financial calculations against Bubble API data via the **Arkhitect** web app (React + Vite + PostgreSQL). All tests run dynamically via Judge0 using user-editable templates.
 
-## Prerequisites
+## Arkhitect Web App
 
-- **Node.js** (v14 or later recommended)
+A minimalist SaaS-style app with:
+- **Setup** – Configure Bubble API (required), Cursor API, GitHub repo URL, Judge0
+- **Validator** – Shared header: suite selector, Entity ID (Order ID), Add Suite button
+- **Test Runner** – Run tests (Judge0), view pass/fail and expected vs received
+- **Test Editor** – Monaco editor for calculator logic, Cursor AI (user-provided repo), Judge0 execution
+- **Logic** – Markdown preview of LOGIC.md per suite
 
-## Setup
+### Quick start (Arkhitect app)
 
-1. **Initialize project** (if no `package.json` exists)
-
-   ```bash
-   npm init -y
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   npm install axios dotenv jest
-   ```
-
-3. **Environment variables**
-
-   Copy the example env file and add your Bubble API credentials:
+1. **PostgreSQL** – Create a database and set `DATABASE_URL` in `.env`
+2. **Install and migrate**
 
    ```bash
-   cp .env.example .env
+   npm install
+   cd server && npm install && npm run db:migrate && npm run db:seed
    ```
 
-   Edit `.env` and set:
-
-   ```
-   BUBBLE_API_BASE=https://your-bubble-app.bubbleapps.io/api/1.1/obj
-   BUBBLE_API_TOKEN=your-bubble-api-token-here
-   ```
-
-4. **Run tests**
+3. **Run**
 
    ```bash
-   npx jest
+   npm run dev
    ```
 
-   To run tests in watch mode:
+   - Frontend: http://localhost:5173 (Vite)
+   - Backend: http://localhost:3000
+
+   Or build and serve:
 
    ```bash
-   npx jest --watch
+   npm run build && npm start
    ```
 
-## Test suites
+4. **Configure** – Open Setup tab, add Bubble API base URL and token, save
+5. **Run tests** – Validator → Test Runner → select “Order Validation”, enter order ID, click Run Test
 
-### 1. GP_Order financial validation (`order.test.js`)
+See `ARCHITECTURE.md` for full design and API details.
 
-Validates a single order's calculated values against Bubble:
+---
 
-- Ticket count
-- Gross amount
-- Discount amount (flat and percentage)
-- Processing fee revenue and deduction
-- Total order value
-- Service fee
-- Donation amount
-- Custom fees
+## Legacy Files
 
-### 2. GP_ReportingDaily validation (`reportingDaily.test.js`)
-
-Validates that summed `GP_ReportingDaily` entries for a date match the summed values from orders with the same Date Label. Uses the order ID to fetch its Date Label, then fetches all orders and all ReportingDaily entries for that date, sums them, and compares per the workflow mapping.
-
-**Validated fields:** gross_sales, gross_revenue, net_revenue, total_tickets_sold, total_ticket_sales, total_service_fees, net_service_fees, total_fees, net_total_fees, total_processing_fees (revenue & deductions), donations, total_discounts, total_deductions, total_orders_count.
-
-**Configuration:** Update `REPORTING_DAILY_TYPE` in `reportingDaily.test.js` if your Bubble type name differs (e.g. `"ReportingDaily"` instead of `"GP_ReportingDaily"`).
-
-## Configuration
-
-- **Order ID:** Set in `order.test.js` and `reportingDaily.test.js` `beforeAll` hooks.
-- **Bubble API:** See [Data API requests](https://manual.bubble.io/help-guides/integrations/api/the-bubble-api/the-data-api/data-api-requests) for search/constraint format.
+- `orderCalculator.js` – Reference for Order Validation logic (inlined in seed template)
+- `bubbleClient.js` – Reference for Bubble API usage (injected helpers use fetch)
+- `testConfig.js` – Legacy; config now comes from Setup tab

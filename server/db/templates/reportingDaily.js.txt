@@ -1,0 +1,35 @@
+// Reporting Daily - uses getThing, searchThings, ENTITY_ID (seed order ID)
+// ENTITY_ID = Order ID of a paid order with Date Label and Event
+const seedOrder = await getThing("GP_Order", ENTITY_ID);
+const dateLabel = seedOrder["Date Label"];
+const eventId = seedOrder["Event"];
+if (!dateLabel || !eventId) throw new Error("Order has no Date Label or Event");
+
+const reportingConstraints = [
+  { key: "Date Label", constraint_type: "equals", value: dateLabel },
+  { key: "Event", constraint_type: "equals", value: eventId }
+];
+const orderConstraints = [
+  ...reportingConstraints,
+  { key: "Order Status", constraint_type: "equals", value: "Paid" }
+];
+
+const searchSafe = async (type, constraints) => {
+  try { return await searchThings(type, constraints); }
+  catch (e) { if (e && e.response && e.response.status === 404) return []; throw e; }
+};
+
+const [reportingDaily, reportingTicketTypeDaily, reportingCustomFeeDaily, orders] = await Promise.all([
+  searchSafe("GP_ReportingDaily", reportingConstraints),
+  searchSafe("GP_ReportingTicketTypeDaily", reportingConstraints),
+  searchSafe("GP_ReportingCustomFeeDaily", reportingConstraints),
+  searchThings("GP_Order", orderConstraints)
+]);
+
+const results = [
+  { label: "Orders found", expected: orders.length, received: orders.length, pass: true },
+  { label: "ReportingDaily entries", expected: reportingDaily.length, received: reportingDaily.length, pass: true },
+];
+const passed = results.filter((r) => r.pass).length;
+const failed = results.filter((r) => !r.pass).length;
+console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }));

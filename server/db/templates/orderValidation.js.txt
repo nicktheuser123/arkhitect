@@ -1,0 +1,154 @@
+// Order Validation - uses getThing, searchThings, ENTITY_ID (injected)
+const money = (n) => Number(n || 0).toFixed(2);
+const roundTo2 = (n) => Math.round(n * 100) / 100;
+
+const order = await getThing("GP_Order", ENTITY_ID);
+const addOns = await Promise.all((order["Add Ons"] || []).map((id) => getThing("GP_AddOn", id)));
+const promotion = order.GP_Promotion ? await getThing("GP_Promotion", order.GP_Promotion) : null;
+const event = await getThing("event", order.Event);
+const eventDetail = await getThing("GP_EventDetail", event.GP_EventDetail);
+
+const ticketTypes = {};
+for (const addOn of addOns) {
+  if (addOn["OS AddOnType"] !== "Ticket") continue;
+  const tid = addOn.GP_TicketType;
+  if (!ticketTypes[tid]) ticketTypes[tid] = await getThing("GP_TicketType", tid);
+}
+
+const customFeeTypes = {};
+if (order["GP_CustomFees"] && Array.isArray(order["GP_CustomFees"])) {
+  for (const id of order["GP_CustomFees"]) {
+    const f = await getThing("GP_CustomFeeType", id);
+    customFeeTypes[f._id] = f;
+  }
+}
+
+let orderFees = [];
+for (const addOn of addOns) {
+  if (addOn["GP_OrderFee"] && Array.isArray(addOn["GP_OrderFee"])) {
+    for (const id of addOn["GP_OrderFee"]) {
+      try {
+        const f = await getThing("GP_OrderFee", id);
+        if (f) orderFees.push(f);
+      } catch (e) {}
+    }
+  }
+}
+
+// calculateOrder logic (simplified inline)
+let ticketCount = 0, grossAmount = 0, finalAmount = 0, discountTotal = 0, totalServiceFee = 0, donationTotal = 0, totalCustomFees = 0;
+let totalApplicableTicketSum = 0;
+if (promotion && promotion["OS GP Promotion Type"] === "Discount Amount") {
+  addOns.forEach((a) => {
+    if (a["OS AddOnType"] !== "Ticket") return;
+    const tt = ticketTypes[a.GP_TicketType];
+    if (!tt || !(tt.GP_Promotions && tt.GP_Promotions.includes(promotion._id))) return;
+    totalApplicableTicketSum += (tt.Price || 0) * (a.Quantity || 0);
+  });
+}
+const addOnFinalPrices = {};
+const paymentProvider = order["OS Payment Provider"] || "Stripe";
+const pfdPercentage = paymentProvider === "Authorize.NET" ? 0 : 0.029;
+const pfdFixed = paymentProvider === "Authorize.NET" ? 0.05 : 0.30;
+
+addOns.forEach((addOn) => {
+  if (addOn["OS AddOnType"] === "Donation") {
+    donationTotal += addOn["Gross Price"] || addOn["Final Price"] || 0;
+    return;
+  }
+  if (addOn["OS AddOnType"] !== "Ticket") return;
+  const ticketType = ticketTypes[addOn.GP_TicketType];
+  if (!ticketType) throw new Error("TicketType not loaded for " + addOn._id);
+  const qty = addOn.Quantity || 0;
+  const ticketPrice = ticketType.Price || 0;
+  ticketCount += qty;
+  const addOnTicketTotal = ticketPrice * qty;
+  let discount = 0;
+  if (promotion && ticketType.GP_Promotions && ticketType.GP_Promotions.includes(promotion._id)) {
+    if (promotion["OS GP Promotion Type"] === "Discount Amount") {
+      const discountAmount = promotion.DiscountAmt || 0;
+      const amountToDistribute = Math.min(discountAmount, totalApplicableTicketSum);
+      if (totalApplicableTicketSum > 0 && amountToDistribute > 0) {
+        const weight = addOnTicketTotal / totalApplicableTicketSum;
+        discount = roundTo2(Math.min(weight * amountToDistribute, addOnTicketTotal));
+      }
+    } else if (promotion["OS GP Promotion Type"] === "Discount Percentage") {
+      discount = Math.min(addOnTicketTotal * (promotion.DiscountPct || 0), addOnTicketTotal);
+    }
+  }
+  discountTotal += discount;
+  const serviceFeePerTicket = ticketPrice === 0 ? 0 : (ticketType["Service Fee"] != null ? ticketType["Service Fee"] : 2);
+  let serviceFee = 0, addOnFinal = 0;
+  if (discount >= addOnTicketTotal) {
+    addOnFinal = 0;
+  } else {
+    serviceFee = serviceFeePerTicket * qty;
+    addOnFinal = addOnTicketTotal + serviceFee - discount;
+  }
+  totalServiceFee += serviceFee;
+  grossAmount += addOnTicketTotal;
+  finalAmount += addOnFinal;
+  addOnFinalPrices[addOn._id] = addOnFinal;
+});
+
+const ticketAddOns = addOns.filter((a) => a["OS AddOnType"] === "Ticket");
+if (Object.keys(customFeeTypes).length > 0 && ticketAddOns.length > 0) {
+  const validTicketAddOns = ticketAddOns.filter((a) => (addOnFinalPrices[a._id] || 0) >= 0.01);
+  const validAddOnCount = validTicketAddOns.length;
+  Object.values(customFeeTypes).forEach((customFeeType) => {
+    const feeType = customFeeType.Type;
+    const feeAmount = customFeeType["Fee Amount"] || 0;
+    const fixedFeePerAddOn = feeType === "Fixed" && validAddOnCount > 0 ? feeAmount / validAddOnCount : feeAmount;
+    ticketAddOns.forEach((addOn) => {
+      const addOnFinalPrice = addOnFinalPrices[addOn._id] || 0;
+      if (addOnFinalPrice < 0.01) return;
+      if (feeType === "Percentage") totalCustomFees += addOnFinalPrice * feeAmount;
+      else if (feeType === "Fixed") totalCustomFees += fixedFeePerAddOn;
+    });
+  });
+}
+
+const noProcessingFee = eventDetail["No Processing Fee"] === true || eventDetail["No Processing Fee"] === "Yes";
+const baseAmount = finalAmount + donationTotal;
+let processingFeeRevenue = 0, totalOrderValue, stripeDeduction;
+
+if (baseAmount < 0.01) {
+  totalOrderValue = 0;
+  processingFeeRevenue = 0;
+  stripeDeduction = 0;
+} else if (noProcessingFee) {
+  totalOrderValue = finalAmount + donationTotal + totalCustomFees;
+  stripeDeduction = (totalOrderValue * pfdPercentage) + pfdFixed;
+} else {
+  const processingFeeFixed = eventDetail["Processing Fee $"] || 0;
+  const processingFeePct = eventDetail["Processing Fee %"] || 0;
+  const combinedPercentage = pfdPercentage + processingFeePct;
+  const combinedFixed = pfdFixed + processingFeeFixed;
+  const baseDenominator = 1 - combinedPercentage;
+  if (baseDenominator <= 0) throw new Error("Invalid processing fee percentage");
+  const donationFee = (1 - pfdPercentage) > 0 ? roundTo2((donationTotal / (1 - pfdPercentage)) * pfdPercentage) : 0;
+  const base = (finalAmount + combinedFixed + totalCustomFees) / baseDenominator;
+  const totalProcessingFee = roundTo2((base * combinedPercentage) + combinedFixed + donationFee);
+  totalOrderValue = finalAmount + totalCustomFees + totalProcessingFee + donationTotal;
+  stripeDeduction = roundTo2(totalOrderValue * pfdPercentage) + pfdFixed;
+  processingFeeRevenue = totalProcessingFee - stripeDeduction;
+}
+
+const bubbleCustomFees = orderFees.reduce((s, f) => s + (f["GP_OrderFee Amt"] || 0), 0);
+const assert = (exp, rec, tol) => (tol === 0 ? Math.abs(Number(exp) - Number(rec)) < 0.01 : Math.abs(Number(exp) - Number(rec)) < Math.pow(10, -(tol || 2)));
+
+const results = [
+  { label: "Ticket Count", expected: ticketCount, received: order["Ticket Count"], pass: assert(order["Ticket Count"], ticketCount, 0) },
+  { label: "Gross Amount", expected: money(grossAmount), received: money(order["Gross Amount"]), pass: assert(order["Gross Amount"], grossAmount, 2) },
+  { label: "Discount Amount", expected: money(discountTotal), received: money(order["Discount Amount"]), pass: (!order.GP_Promotion || order.GP_Promotion === "" || order.GP_Promotion === null) ? (discountTotal === 0 && (order["Discount Amount"] == null || order["Discount Amount"] === "" || order["Discount Amount"] === 0)) : assert(order["Discount Amount"], discountTotal, 2) },
+  { label: "Processing Fee Revenue", expected: money(processingFeeRevenue), received: money(order["Processing Fee Revenue"] || 0), pass: assert(order["Processing Fee Revenue"] || 0, processingFeeRevenue, 2) },
+  { label: "Processing Fee Deduction", expected: money(stripeDeduction), received: money(order["Processing Fee Deduction"] || 0), pass: assert(order["Processing Fee Deduction"] || 0, stripeDeduction, 2) },
+  { label: "Total Order Value", expected: money(totalOrderValue), received: money(order["Total Order Value"]), pass: assert(order["Total Order Value"], totalOrderValue, 2) },
+  { label: "Total Service Fee", expected: money(totalServiceFee), received: money(order["Fee Service"]), pass: assert(order["Fee Service"], totalServiceFee, 2) },
+  { label: "Donation Amount", expected: money(donationTotal), received: money(order["Donation Amount"] || 0), pass: assert(order["Donation Amount"] || 0, donationTotal, 2) },
+  { label: "Custom Fees", expected: money(totalCustomFees), received: money(bubbleCustomFees), pass: assert(bubbleCustomFees, totalCustomFees, 2) },
+];
+
+const passed = results.filter((r) => r.pass).length;
+const failed = results.filter((r) => !r.pass).length;
+console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }));
