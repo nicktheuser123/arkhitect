@@ -108,11 +108,11 @@ export async function editCode(code, instruction) {
   return r.json();
 }
 
-export async function summarizeCode(code) {
-  const r = await fetch(`${API}/ai/summarize`, {
+export async function refineCode(code, corrections) {
+  const r = await fetch(`${API}/ai/refine`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify({ code, corrections }),
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();

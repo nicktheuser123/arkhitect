@@ -67,7 +67,7 @@ router.put("/:id", async (req, res) => {
     const {
       name, description, calculator_code, logic_md,
       run_order_tests, run_reporting_daily_tests,
-      created_by, change_description, summary,
+      created_by, change_description, summary, assumptions,
     } = req.body;
 
     if (calculator_code != null) {
@@ -94,10 +94,12 @@ router.put("/:id", async (req, res) => {
         logic_md = COALESCE($5, logic_md),
         run_order_tests = COALESCE($6, run_order_tests),
         run_reporting_daily_tests = COALESCE($7, run_reporting_daily_tests),
+        assumptions = COALESCE($8, assumptions),
         updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [id, name, description, calculator_code, logic_md, run_order_tests, run_reporting_daily_tests]
+      [id, name, description, calculator_code, logic_md, run_order_tests, run_reporting_daily_tests,
+       assumptions ? JSON.stringify(assumptions) : null]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Test suite not found" });

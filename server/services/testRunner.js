@@ -62,6 +62,21 @@ function searchThings(type, constraints, limit) {
 }
 `;
 
+function parseTraceSteps(logs) {
+  if (!logs) return [];
+  const steps = [];
+  for (const line of logs.split("\n")) {
+    if (line.startsWith("__TRACE__")) {
+      try {
+        steps.push(JSON.parse(line.slice("__TRACE__".length)));
+      } catch (e) {
+        // skip malformed trace lines
+      }
+    }
+  }
+  return steps;
+}
+
 export async function executeTest(runId, suite, entityId, config) {
   try {
     const baseURL = config.bubble_api_base;
@@ -97,6 +112,8 @@ export async function executeTest(runId, suite, entityId, config) {
     const exec = await executeCode(injected, "", 63, judge0Key);
     const logs = [exec.stdout, exec.stderr].filter(Boolean).join("\n");
 
+    const traceSteps = parseTraceSteps(exec.stdout);
+
     let expected_vs_received = [];
     let passed = 0;
     let failed = 0;
@@ -122,7 +139,8 @@ export async function executeTest(runId, suite, entityId, config) {
     await query(
       `UPDATE test_runs SET
         status = $2, logs = $3, expected_vs_received = $4,
-        passed_count = $5, failed_count = $6, error_message = $7
+        passed_count = $5, failed_count = $6, error_message = $7,
+        trace_steps = $8
        WHERE id = $1`,
       [
         runId,
@@ -132,6 +150,7 @@ export async function executeTest(runId, suite, entityId, config) {
         passed,
         failed,
         status === "error" ? logs : null,
+        JSON.stringify(traceSteps),
       ]
     );
   } catch (err) {

@@ -14,27 +14,59 @@ Output format — the test MUST end with:
 const EXAMPLE_SNIPPET = `
 Example test (order validation, abbreviated):
   const order = await getThing("GP_Order", ENTITY_ID);
+  console.log("__TRACE__" + JSON.stringify({ step: 1, title: "Fetched Order", type: "fetch", data: { "Ticket Count": order["Ticket Count"], "Gross Amount": order["Gross Amount"] } }));
   const addOns = await Promise.all((order["Add Ons"] || []).map(id => getThing("GP_AddOn", id)));
-  // ... compute expected values ...
+  console.log("__TRACE__" + JSON.stringify({ step: 2, title: "Fetched " + addOns.length + " Add Ons", type: "fetch", data: addOns.map(a => ({ Type: a["OS AddOnType"], Qty: a.Quantity, Price: a.Price })) }));
   let ticketCount = 0, grossAmount = 0;
   addOns.forEach(addOn => {
     if (addOn["OS AddOnType"] !== "Ticket") return;
     ticketCount += addOn.Quantity || 0;
     grossAmount += (ticketType.Price || 0) * (addOn.Quantity || 0);
   });
+  console.log("__TRACE__" + JSON.stringify({ step: 3, title: "Calculated Ticket Count", type: "calculation", data: { formula: "Sum of Quantity where Type = Ticket", value: ticketCount } }));
+  console.log("__TRACE__" + JSON.stringify({ step: 4, title: "Calculated Gross Amount", type: "calculation", data: { formula: "Sum of (Price × Quantity) for tickets", value: grossAmount.toFixed(2) } }));
   const results = [
     { label: "Ticket Count", expected: ticketCount, received: order["Ticket Count"], pass: ticketCount === order["Ticket Count"] },
     { label: "Gross Amount", expected: grossAmount.toFixed(2), received: Number(order["Gross Amount"]).toFixed(2), pass: Math.abs(grossAmount - order["Gross Amount"]) < 0.01 },
   ];
+  console.log("__TRACE__" + JSON.stringify({ step: 5, title: "Assertions", type: "assertion", data: results }));
   const passed = results.filter(r => r.pass).length;
   const failed = results.filter(r => !r.pass).length;
   console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }));
+`;
+
+const TRACE_INSTRUCTIONS = `
+IMPORTANT — Trace logging:
+You MUST insert console.log("__TRACE__" + JSON.stringify({...})) calls between every logical step.
+Each trace entry has: { step: <number>, title: <string>, type: <"fetch"|"calculation"|"assertion">, data: <object|array> }
+- After every data fetch, emit a "fetch" trace showing the key fields retrieved.
+- After every calculation, emit a "calculation" trace showing the formula description and computed value.
+- Before the final __ARKHITECT_RESULT__, emit an "assertion" trace with the results array.
+This lets non-technical users see the math step-by-step with real numbers.
+`;
+
+const ASSUMPTIONS_INSTRUCTIONS = `
+IMPORTANT — Assumptions:
+In addition to code, you MUST return an "assumptions" array listing every assumption you made.
+Each assumption is an object with:
+- "id": short unique string like "ds1", "calc1", "assert1"
+- "category": one of "data_source", "calculation", "assertion"
+- "description": plain-English description a non-coder can understand
+- "confidence": "high" (very likely correct), "medium" (probably correct), or "low" (guessing)
+- "editHint": (optional) a question to ask the user if confidence is not "high", e.g. "What is the processing fee percentage?"
+
+Examples of good assumptions:
+  { "id": "ds1", "category": "data_source", "description": "Order data comes from entity type 'GP_Order'", "confidence": "high" }
+  { "id": "calc1", "category": "calculation", "description": "Ticket Count = sum of Quantity on Add Ons where AddOnType is 'Ticket'", "confidence": "medium", "editHint": "How is ticket count calculated?" }
+  { "id": "calc2", "category": "calculation", "description": "Processing Fee = Gross Amount × 3.5%", "confidence": "low", "editHint": "What is the processing fee percentage or formula?" }
+  { "id": "assert1", "category": "assertion", "description": "Gross Amount compared with $0.01 tolerance", "confidence": "high" }
 `;
 
 const GENERATE_SYSTEM_PROMPT = `You are a test code generator for Arkhitect, a Bubble.io validation platform.
 You write JavaScript test code that fetches data from a Bubble.io app, computes expected values, and compares them against actual Bubble field values.
 
 ${BUBBLE_HELPERS_DOCS}
+${TRACE_INSTRUCTIONS}
 ${EXAMPLE_SNIPPET}
 
 Rules:
@@ -44,52 +76,59 @@ Rules:
 - Handle null/undefined fields gracefully with defaults.
 - Use helper: const money = (n) => Number(n || 0).toFixed(2); for monetary comparisons.
 - Use tolerance-based comparison for numbers: Math.abs(a - b) < 0.01.
+- Include __TRACE__ logging between every step as described above.
+
+${ASSUMPTIONS_INSTRUCTIONS}
 
 Respond with a JSON object (no markdown fences):
 {
-  "code": "...the full test code...",
-  "summary": "...a structured plain-English summary with sections: ## Data Sources, ## Calculation Logic, ## Assertions..."
+  "code": "...the full test code with __TRACE__ logging...",
+  "assumptions": [ ...array of assumption objects... ]
 }`;
 
 const EDIT_SYSTEM_PROMPT = `You are a test code editor for Arkhitect, a Bubble.io validation platform.
 You modify existing JavaScript test code based on user instructions.
 
 ${BUBBLE_HELPERS_DOCS}
+${TRACE_INSTRUCTIONS}
 
 Rules:
 - Return the COMPLETE modified test code (not a diff/patch).
 - Preserve existing logic unless the instruction says to change it.
 - Keep the __ARKHITECT_RESULT__ output format.
+- Keep __TRACE__ logging between every step. Update trace entries to reflect changes.
 - Handle edge cases introduced by the change.
+
+${ASSUMPTIONS_INSTRUCTIONS}
 
 Respond with a JSON object (no markdown fences):
 {
   "code": "...the complete modified test code...",
-  "summary": "...a structured plain-English summary of the full test with sections: ## Data Sources, ## Calculation Logic, ## Assertions...",
-  "changeDescription": "...a concise list of what was changed, e.g. 'Added discount cap at 50% of ticket price'..."
+  "assumptions": [ ...updated array of assumption objects... ],
+  "changeDescription": "...a concise list of what was changed..."
 }`;
 
-const SUMMARIZE_SYSTEM_PROMPT = `You summarize JavaScript test code for Arkhitect, a Bubble.io validation platform.
+const REFINE_SYSTEM_PROMPT = `You are a test code editor for Arkhitect, a Bubble.io validation platform.
+The user has reviewed the assumptions made by the AI and provided corrections.
+You must update the test code to reflect the corrected assumptions.
 
-Given test code, produce a structured plain-English summary. Use these sections:
-## Data Sources
-List each entity type fetched and how (by ID, by search, by reference).
+${BUBBLE_HELPERS_DOCS}
+${TRACE_INSTRUCTIONS}
 
-## Calculation Logic
-Describe the computation steps in plain English. Include conditionals, loops, and edge cases.
-Use numbered steps and sub-bullets for branches.
+Rules:
+- Return the COMPLETE modified test code (not a diff/patch).
+- Apply each correction precisely — the user is telling you what was WRONG in the previous version.
+- Keep the __ARKHITECT_RESULT__ output format.
+- Keep __TRACE__ logging between every step. Update trace entries to reflect changes.
+- Handle edge cases introduced by corrections.
 
-## Assertions
-List each check: what field is compared, what the expected value is based on, and the comparison method.
+${ASSUMPTIONS_INSTRUCTIONS}
 
-Respond with ONLY the summary text (markdown). No JSON wrapper, no code fences around the whole response.`;
-
-const DIFF_SUMMARY_SYSTEM_PROMPT = `You compare two versions of JavaScript test code and describe what changed in plain English.
-
-Be concise. List each change as a bullet point. Focus on logic changes, not formatting.
-If a user instruction is provided, relate the changes back to it.
-
-Respond with ONLY the change description text (markdown bullets). No JSON wrapper.`;
+Respond with a JSON object (no markdown fences):
+{
+  "code": "...the complete corrected test code...",
+  "assumptions": [ ...updated array of assumption objects reflecting corrections... ]
+}`;
 
 async function chat(baseURL, apiKey, model, messages, jsonMode = false) {
   const url = baseURL.replace(/\/+$/, "") + "/chat/completions";
@@ -146,21 +185,14 @@ export async function editTestCode(baseURL, apiKey, model, existingCode, instruc
   return parseJSON(raw);
 }
 
-export async function summarizeTestCode(baseURL, apiKey, model, code) {
-  const raw = await chat(baseURL, apiKey, model, [
-    { role: "system", content: SUMMARIZE_SYSTEM_PROMPT },
-    { role: "user", content: `\`\`\`javascript\n${code}\n\`\`\`` },
-  ]);
-  return { summary: raw.trim() };
-}
+export async function refineTestCode(baseURL, apiKey, model, existingCode, corrections) {
+  const correctionText = corrections
+    .map(c => `- Assumption "${c.assumptionId}": ${c.correction}`)
+    .join("\n");
 
-export async function diffSummary(baseURL, apiKey, model, oldCode, newCode, instruction) {
   const raw = await chat(baseURL, apiKey, model, [
-    { role: "system", content: DIFF_SUMMARY_SYSTEM_PROMPT },
-    {
-      role: "user",
-      content: `Previous code:\n\`\`\`javascript\n${oldCode}\n\`\`\`\n\nNew code:\n\`\`\`javascript\n${newCode}\n\`\`\`${instruction ? `\n\nUser instruction: ${instruction}` : ""}`,
-    },
-  ]);
-  return { changeDescription: raw.trim() };
+    { role: "system", content: REFINE_SYSTEM_PROMPT },
+    { role: "user", content: `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nCorrections to apply:\n${correctionText}` },
+  ], true);
+  return parseJSON(raw);
 }

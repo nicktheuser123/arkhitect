@@ -3,7 +3,7 @@ import { query } from "../db/index.js";
 import {
   generateTestCode,
   editTestCode,
-  summarizeTestCode,
+  refineTestCode,
 } from "../services/llm.js";
 
 const router = Router();
@@ -51,18 +51,20 @@ router.post("/edit", async (req, res) => {
   }
 });
 
-router.post("/summarize", async (req, res) => {
+router.post("/refine", async (req, res) => {
   try {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ error: "code is required" });
+    const { code, corrections } = req.body;
+    if (!code || !corrections || !corrections.length) {
+      return res.status(400).json({ error: "code and corrections are required" });
+    }
 
     const cfg = await loadLLMConfig();
     if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
 
-    const result = await summarizeTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code);
+    const result = await refineTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, corrections);
     res.json(result);
   } catch (err) {
-    console.error("AI summarize error:", err);
+    console.error("AI refine error:", err);
     res.status(500).json({ error: err.message });
   }
 });
