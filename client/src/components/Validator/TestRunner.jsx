@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   runTest,
   getTestRun,
@@ -8,46 +8,66 @@ import StepTrace from "./StepTrace";
 
 const POLL_INTERVAL = 1500;
 
-export default function TestRunner({ selectedSuite, entityId, suites, onFeedback }) {
+export default function TestRunner({ selectedSuite, entityId, suites, onFeedback, onDisplayRunChange }) {
   const [running, setRunning] = useState(false);
   const [currentRun, setCurrentRun] = useState(null);
   const [runs, setRuns] = useState([]);
   const [error, setError] = useState("");
   const [logsExpanded, setLogsExpanded] = useState(false);
+  const pollRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedSuite) return;
     getTestRuns(selectedSuite).then(setRuns).catch(() => {});
   }, [selectedSuite]);
 
-  const handleRun = async () => {
+  const handleRun = useCallback(async () => {
     if (!selectedSuite || !entityId.trim()) {
       setError("Select a test suite and enter Entity ID (Order ID) above.");
       return;
     }
     setError("");
     setRunning(true);
+    if (pollRef.current) clearInterval(pollRef.current);
     try {
       const run = await runTest(selectedSuite, entityId.trim());
       setCurrentRun(run);
-      const poll = setInterval(async () => {
-        const updated = await getTestRun(run.id);
-        setCurrentRun(updated);
-        if (updated.status !== "running" && updated.status !== "pending") {
-          clearInterval(poll);
+      pollRef.current = setInterval(async () => {
+        try {
+          const updated = await getTestRun(run.id);
+          setCurrentRun(updated);
+          if (updated.status !== "running" && updated.status !== "pending") {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setRunning(false);
+            getTestRuns(selectedSuite).then(setRuns).catch(() => {});
+          }
+        } catch (_) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
           setRunning(false);
-          getTestRuns(selectedSuite).then(setRuns).catch(() => {});
         }
       }, POLL_INTERVAL);
     } catch (e) {
       setError(e.message);
       setRunning(false);
     }
-  };
+  }, [selectedSuite, entityId]);
 
   const displayRun = currentRun || (runs[0] ? runs[0] : null);
   const results = displayRun?.expected_vs_received || [];
+
+  useEffect(() => {
+    onDisplayRunChange?.(displayRun);
+  }, [displayRun, onDisplayRunChange]);
   const traceSteps = displayRun?.trace_steps || [];
+  const suiteName = suites?.find((s) => s.id === selectedSuite)?.name;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
@@ -79,33 +99,13 @@ export default function TestRunner({ selectedSuite, entityId, suites, onFeedback
               <span>Status: {displayRun.status}</span>
             </div>
 
-            {traceSteps.length > 0 && (
-              <StepTrace traceSteps={traceSteps} onFeedback={onFeedback} />
-            )}
-
-            {traceSteps.length === 0 && results.length > 0 && (
-              <table className="result-table" style={{ marginTop: "1rem" }}>
-                <thead>
-                  <tr>
-                    <th>Field</th>
-                    <th>Expected</th>
-                    <th>Received</th>
-                    <th>Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.label}</td>
-                      <td>{String(r.expected ?? "")}</td>
-                      <td>{String(r.received ?? "")}</td>
-                      <td className={r.pass ? "pass" : "fail"}>
-                        {r.pass ? "PASS" : "FAIL"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {(traceSteps.length > 0 || results.length > 0) && (
+              <StepTrace
+                traceSteps={traceSteps}
+                assertions={results}
+                suiteName={suiteName}
+                onFeedback={onFeedback}
+              />
             )}
 
             {displayRun.logs && (

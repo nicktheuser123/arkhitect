@@ -1,0 +1,168 @@
+{
+  "appId": "finark",
+  "version": "live",
+  "versionSyncedAt": "2026-02-26T15:13:57.538Z",
+  "results": [
+    {
+      "path": "/user_types/af_transaction",
+      "requested": "/user_types/af_transaction",
+      "resolved_from": "pointer",
+      "ok": true,
+      "value": {
+        "deleted": true,
+        "display": "AF_Transaction",
+        "fields": {
+          "account_text_text": {
+            "display": "accountText",
+            "value": "text",
+            "value_friendly": "Text"
+          },
+          "amount_number": {
+            "display": "amount",
+            "value": "number"
+          },
+          "assettransactiontype_option_os_assettransactiontype": {
+            "display": "assetTransactionType",
+            "value": "option.os_assettransactiontype",
+            "value_friendly": "OS_assetTransactionType"
+          },
+          "balance_number": {
+            "display": "balance",
+            "value": "number"
+          },
+          "business_custom_af_business": {
+            "display": "Business",
+            "value": "custom.af_business",
+            "value_friendly": "AF_Business"
+          },
+          "category_custom_af_category": {
+            "display": "Category",
+            "value": "custom.af_category",
+            "value_friendly": "AF_Category"
+          },
+          "details_text": {
+            "display": "details",
+            "value": "text",
+            "value_friendly": "Text"
+          },
+          "dr___cr_text": {
+            "display": "Dr / Cr",
+            "value": "text",
+            "value_friendly": "Text"
+          },
+          "expense__boolean": {
+            "display": "expense?",
+            "value": "boolean",
+            "value_friendly": "Boolean"
+          },
+          "frequency_option_os_frequency": {
+            "display": "Frequency",
+            "value": "option.os_frequency",
+            "value_friendly": "OS_Frequency"
+          },
+          "fromassetorplatform_custom_af_asset": {
+            "display": "FromAssetOrPlatform",
+            "value": "custom.af_asset",
+            "value_friendly": "AF_Asset"
+          },
+          "income_1_boolean": {
+            "display": "income?",
+            "value": "boolean",
+            "value_friendly": "Boolean"
+          },
+          "os_month_option_os_months": {
+            "display": "OS_month",
+            "value": "option.os_months",
+            "value_friendly": "OS_months"
+          },
+          "particulars_text": {
+            "display": "particulars",
+            "value": "text",
+            "value_friendly": "Text"
+          },
+          "price_number": {
+            "display": "priceAssetTransaction",
+            "value": "number"
+          },
+          "quantity_number": {
+            "display": "quantity",
+            "value": "number"
+          },
+          "toassetorplatform_custom_af_asset": {
+            "display": "ToAssetOrPlatform",
+            "value": "custom.af_asset",
+            "value_friendly": "AF_Asset"
+          },
+          "transactiondate_date": {
+            "display": "transactionDate",
+            "value": "date",
+            "value_friendly": "Scheduled date"
+          },
+          "transactiontype_option_os_transactiontype": {
+            "display": "TransactionType",
+            "value": "option.os_transactiontype",
+            "value_friendly": "OS_transactionType"
+          },
+          "transfer_boolean": {
+            "display": "transfer?",
+            "value": "boolean",
+            "value_friendly": "Boolean"
+          },
+          "updatedbyuser_boolean": {
+            "display": "updatedByUser?",
+            "value": "boolean",
+            "value_friendly": "Boolean"
+          },
+          "user_user": {
+            "display": "User",
+            "value": "user",
+            "value_friendly": "User"
+          }
+        }
+      }
+    },
+    {
+      "path": "/option_sets/os_transactiontype",
+      "requested": "/option_sets/os_transactiontype",
+      "resolved_from": "pointer",
+      "ok": true,
+      "value": {
+        "creation_source": "editor",
+        "deleted": true,
+        "display": "OS_transactionType",
+        "values": {
+          "cmXYO": {
+            "db_value": "business",
+            "display": "Business",
+            "sort_factor": 1
+          },
+          "cmXYR": {
+            "db_value": "loan_liabilities",
+            "display": "Loan Liabilities",
+            "sort_factor": 4
+          },
+          "cmXYS": {
+            "db_value": "personal",
+            "display": "Personal",
+            "sort_factor": 2
+          },
+          "cmXYT": {
+            "db_value": "crypto",
+            "display": "Crypto",
+            "sort_factor": 3
+          },
+          "cmXYV": {
+            "db_value": "loan_assets",
+            "display": "Loan Assets",
+            "sort_factor": 5
+          },
+          "cmYRD": {
+            "db_value": "investment",
+            "display": "Investment",
+            "sort_factor": 6
+          }
+        }
+      }
+    }
+  ]
+}

@@ -8,7 +8,6 @@ export default function Setup() {
     llm_api_base: "",
     llm_api_key: "",
     llm_model: "",
-    judge0_api_key: "",
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -93,16 +92,6 @@ export default function Setup() {
           placeholder="gpt-4o"
           value={config.llm_model || ""}
           onChange={(e) => handleChange("llm_model", e.target.value)}
-        />
-      </div>
-
-      <div className="form-group">
-        <label>Judge0 API Key (optional – for custom code execution)</label>
-        <input
-          type="password"
-          placeholder="Judge0 API key"
-          value={config.judge0_api_key || ""}
-          onChange={(e) => handleChange("judge0_api_key", e.target.value)}
         />
       </div>
 

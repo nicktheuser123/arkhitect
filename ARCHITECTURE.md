@@ -2,7 +2,7 @@
 
 ## Overview
 
-Arkhitect is a validation SaaS that lets users configure Bubble.io API credentials, define test suites with JavaScript calculator logic, run tests against real data (e.g., Order ID), and maintain a LOGIC.md document. The UI is minimalist: centered single column (60% width) with two main tabs and Validator sub-tabs.
+Arkhitect is a validation SaaS that lets users configure Bubble.io API credentials, describe test suites via chat, review AI-generated assumptions, run tests against real data (e.g., Order ID), and view step-by-step trace results. The UI is minimalist: centered single column (60% width) with two main tabs. Code is generated server-side by the LLM and never exposed to the user.
 
 ---
 
@@ -10,12 +10,12 @@ Arkhitect is a validation SaaS that lets users configure Bubble.io API credentia
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | React 18, Vite, React Router |
+| Frontend | React 19, Vite, React Router |
 | UI | Minimalist custom CSS, no heavy framework |
-| Editor | Monaco Editor (minimal feature set) |
 | Backend | Node.js, Express |
-| Database | PostgreSQL |
-| External APIs | Bubble Data API, Cursor Cloud Agents API, Judge0 CE |
+| Database | Supabase (PostgreSQL) |
+| Code Execution | isolated-vm (V8 isolate sandbox) |
+| External APIs | Bubble Data API, Cursor Cloud Agents API |
 
 ---
 
@@ -28,51 +28,69 @@ arkhitect/
 │   │   ├── components/
 │   │   │   ├── Layout.jsx       # 60% centered column
 │   │   │   ├── Tabs.jsx         # Main tabs: Setup | Validator
-│   │   │   ├── Setup/           # Onboarding tab
-│   │   │   ├── Validator/
-│   │   │   │   ├── TestRunner/  # Select suite, entity ID, run, logs, pass/fail
-│   │   │   │   ├── TestEditor/  # Monaco + Cursor AI chat
-│   │   │   │   └── Logic/       # LOGIC.md display + sync
-│   │   │   └── ...
-│   │   ├── api/
+│   │   │   ├── Setup.jsx        # Onboarding tab
+│   │   │   ├── Auth.jsx         # Authentication
+│   │   │   ├── Validator.jsx    # Main validator orchestrator
+│   │   │   └── Validator/
+│   │   │       ├── ChatPanel.jsx          # LLM chat interface (Edit/Ask)
+│   │   │       ├── AssumptionChecklist.jsx # Review AI assumptions
+│   │   │       ├── TestRunner.jsx         # Run tests, display results
+│   │   │       ├── StepTrace.jsx          # Step-by-step trace visualization
+│   │   │       ├── ValidatorHeader.jsx    # Suite selector + entity ID
+│   │   │       └── VersionHistory.jsx     # Code version management
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx
+│   │   ├── lib/
+│   │   │   └── supabase.js
+│   │   ├── api.js
 │   │   ├── App.jsx
 │   │   └── main.jsx
 │   └── package.json
 ├── server/                 # Express backend
-│   ├── db/                 # PostgreSQL + migrations
+│   ├── db/                 # Supabase + migrations
+│   │   ├── supabase.js
+│   │   ├── init.sql            # Full schema (fresh installs)
+│   │   ├── migrate-add-rls.sql # Upgrade migration (existing DBs)
+│   │   ├── migrate.js          # Runs init.sql then migrations
+│   │   └── seed.js
+│   ├── middleware/
+│   │   └── auth.js         # JWT auth middleware
 │   ├── routes/
 │   │   ├── config.js       # CRUD for setup/credentials
-│   │   ├── testSuites.js   # CRUD for test suites
+│   │   ├── testSuites.js   # CRUD for test suites + confirm endpoint
 │   │   ├── testRuns.js     # Run tests, store results
-│   │   ├── execute.js      # Judge0 code execution
+│   │   ├── ai.js           # LLM generate/edit/refine/ask
+│   │   ├── chat.js         # Chat message handling
+│   │   ├── codeVersions.js # Version history
 │   │   └── cursor.js       # Cursor Cloud Agents API proxy
 │   ├── services/
 │   │   ├── bubbleClient.js # Bubble API calls (server-side)
-│   │   ├── judge0.js       # Judge0 integration
+│   │   ├── testRunner.js   # Test execution via isolated-vm
+│   │   ├── llm.js          # LLM integration (code generation)
 │   │   └── cursorAgent.js  # Cursor API integration
-│   └── index.js
-├── shared/                 # Logic shared between legacy and new
-│   └── orderCalculator.js  # Can be bundled for Judge0 execution
+│   ├── index.js
+│   └── package.json
 └── ARCHITECTURE.md
 ```
 
 ---
 
-## Database Schema (PostgreSQL)
+## Database Schema (Supabase / PostgreSQL)
+
+All tables include `user_id UUID DEFAULT auth.uid()` for multi-tenant RLS. Row Level Security is enabled on every table; users can only access their own rows.
 
 ### `configs`
 
-Stores workspace-level configuration (single row or key-value per workspace).
+Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID | Primary key |
-| key | VARCHAR | e.g. `bubble_api_base`, `bubble_api_token`, `cursor_api_key`, `judge0_api_key` |
-| value | TEXT | Encrypted or plain (use env-based encryption in production) |
+| key | VARCHAR | e.g. `bubble_api_base`, `bubble_api_token`, `llm_api_key`, `llm_model` |
+| value | TEXT | Encrypted or plain |
+| user_id | UUID | FK → auth.users, DEFAULT auth.uid() |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
-
-*For MVP: single-workspace; key-value table. For SaaS: add `workspace_id`.*
 
 ### `test_suites`
 
@@ -81,10 +99,12 @@ Stores workspace-level configuration (single row or key-value per workspace).
 | id | UUID | Primary key |
 | name | VARCHAR | e.g. "Order Validation", "Reporting Daily" |
 | description | TEXT | Optional |
-| calculator_code | TEXT | JavaScript logic (bundle of bubbleClient + calculator) |
+| calculator_code | TEXT | LLM-generated JavaScript test logic (internal, never sent to client) |
+| assumptions | JSONB | Last confirmed assumptions array |
 | logic_md | TEXT | LOGIC.md content |
-| run_order_tests | BOOLEAN | Feature flag (order suite) |
-| run_reporting_daily_tests | BOOLEAN | Feature flag (reporting suite) |
+| run_order_tests | BOOLEAN | Feature flag |
+| run_reporting_daily_tests | BOOLEAN | Feature flag |
+| user_id | UUID | FK → auth.users, DEFAULT auth.uid() |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 
@@ -94,13 +114,42 @@ Stores workspace-level configuration (single row or key-value per workspace).
 |--------|------|-------------|
 | id | UUID | Primary key |
 | test_suite_id | UUID | FK → test_suites |
-| entity_id | VARCHAR | e.g. Order ID (`1771672992747x483733468340289540`) |
+| entity_id | VARCHAR | e.g. Order ID |
 | status | VARCHAR | `pending`, `running`, `passed`, `failed`, `error` |
 | logs | TEXT | Console output from execution |
 | expected_vs_received | JSONB | Array of `{ label, expected, received, pass }` |
+| trace_steps | JSONB | Array of step trace objects |
 | passed_count | INT | |
 | failed_count | INT | |
 | error_message | TEXT | If execution errored |
+| user_id | UUID | FK → auth.users, DEFAULT auth.uid() |
+| created_at | TIMESTAMPTZ | |
+
+### `code_versions`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| test_suite_id | UUID | FK → test_suites |
+| calculator_code | TEXT | Snapshot of code at this version |
+| version_number | INT | Auto-incremented per suite |
+| summary | TEXT | Optional summary |
+| change_description | TEXT | What changed |
+| created_by | VARCHAR | "ai" or "user" |
+| user_id | UUID | FK → auth.users, DEFAULT auth.uid() |
+| created_at | TIMESTAMPTZ | |
+
+### `chat_messages`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| test_suite_id | UUID | FK → test_suites |
+| role | VARCHAR | "user" or "assistant" |
+| content | TEXT | Message text |
+| mode | VARCHAR | "edit" or "ask" |
+| metadata | JSONB | Optional (changeDescription, etc.) |
+| user_id | UUID | FK → auth.users, DEFAULT auth.uid() |
 | created_at | TIMESTAMPTZ | |
 
 ---
@@ -112,7 +161,7 @@ Stores workspace-level configuration (single row or key-value per workspace).
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/config | Get all config keys |
-| PUT | /api/config | Upsert config (key-value) |
+| POST | /api/config/batch | Upsert config batch |
 
 ### Test Suites
 
@@ -121,30 +170,41 @@ Stores workspace-level configuration (single row or key-value per workspace).
 | GET | /api/test-suites | List all suites |
 | POST | /api/test-suites | Create suite |
 | GET | /api/test-suites/:id | Get one suite |
-| PUT | /api/test-suites/:id | Update suite (calculator_code, logic_md) |
+| PUT | /api/test-suites/:id | Update suite |
+| POST | /api/test-suites/:id/confirm | Confirm assumptions, create version |
 | DELETE | /api/test-suites/:id | Delete suite |
 
 ### Test Runs
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/test-runs | Run test (suite_id, entity_id) → triggers Judge0 |
+| POST | /api/test-runs | Run test (suite_id, entity_id) → isolated-vm execution |
 | GET | /api/test-runs | List runs (optional: suite_id filter) |
 | GET | /api/test-runs/:id | Get run result |
 
-### Execute (Judge0)
+### AI / LLM
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/execute | Run calculator code via Judge0, return stdout/stderr |
+| POST | /api/ai/generate | Generate test code from prompt |
+| POST | /api/ai/edit | Edit code (reads from DB via suiteId) |
+| POST | /api/ai/refine | Refine code based on assumption corrections |
+| POST | /api/ai/ask | Ask question about test code |
 
-### Cursor Agent
+### Chat
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | /api/cursor/agent | Launch Cloud Agent (prompt, repo/context) |
-| GET | /api/cursor/agent/:id | Get agent status |
-| POST | /api/cursor/agent/:id/followup | Add follow-up |
+| GET | /api/chat/:suiteId | Get chat messages |
+| POST | /api/chat/:suiteId/send | Send message (edit/ask mode) |
+
+### Code Versions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/test-suites/:id/versions | List versions |
+| GET | /api/test-suites/:id/versions/:vid | Get specific version |
+| POST | /api/test-suites/:id/versions/:vid/restore | Restore version |
 
 ---
 
@@ -155,86 +215,61 @@ Stores workspace-level configuration (single row or key-value per workspace).
 - Form fields:
   - Bubble API Base URL (required)
   - Bubble API Token (required)
-  - Cursor API Key (optional, for Test Editor AI)
-  - GitHub Repo URL (optional, required for Cursor agent - user-provided repo)
-  - Judge0 API Key (optional; public Judge0 CE has rate limits)
-- Save → stored in `configs` table. Bubble credentials are required for test execution.
+  - LLM API Base URL (required)
+  - LLM API Key (required)
+  - LLM Model (required)
+- Save → stored in `configs` table.
 
 ### Tab 2: Validator
 
-- **Shared header** (above sub-tabs): Test Suite dropdown, Entity ID (Order ID) input, Add Suite button.
-- Selecting suite / entity applies across all sub-tabs.
+- **Header**: Test Suite dropdown, Entity ID input, Add Suite button.
+- **Left Panel**: ChatPanel (Edit/Ask modes) + AssumptionChecklist + VersionHistory
+- **Right Panel**: TestRunner + StepTrace
 
-#### Sub-tab 1: Test Runner
+#### User Flow
 
-1. Button: Run Test (uses suite + entity ID from header).
-2. Backend: loads calculator_code, injects Bubble helpers + entity ID + config, sends to Judge0.
-3. Display: Pass/fail summary, Expected vs Received table, Logs.
-
-#### Sub-tab 2: Test Editor
-
-1. Monaco editor: single calculator file per suite (uses getThing, searchThings, ENTITY_ID).
-2. Save → updates `test_suites.calculator_code`.
-3. "Run Code" button → Judge0 execution → inline output.
-4. Cursor AI: user prompt + GitHub repo URL → launches Cursor Cloud Agent on user-provided repo. User applies changes manually.
-
-#### Sub-tab 3: Logic
-
-1. Markdown preview of `logic_md` (from `test_suites.logic_md`).
-2. Edit toggle: textarea for editing, rendered Markdown for view.
+1. User describes the test in ChatPanel (Edit mode)
+2. LLM generates test code (server-side, never shown to user)
+3. AssumptionChecklist shows assumptions for review
+4. User confirms or corrects assumptions
+5. On confirm → code version is created
+6. User runs test with an Entity ID
+7. StepTrace shows fetch → calculation → assertion steps
+8. User verifies results, provides feedback if needed
 
 ---
 
 ## Data Flow: Running a Test
 
 ```
-User selects suite + entity ID (from header), clicks Run
+User selects suite + entity ID, clicks Run
     → POST /api/test-runs { suite_id, entity_id }
-    → Server loads config from configs table (Bubble base, token - no .env fallback)
+    → Server loads config (Bubble base, token)
     → Server loads test_suites.calculator_code
-    → Injects: getThing, searchThings, ENTITY_ID, BUBBLE_BASE, BUBBLE_TOKEN (fetch-based helpers)
-    → Judge0 runs script (language_id: 63)
-    → Script outputs __ARKHITECT_RESULT__ + JSON with results, passed, failed
+    → Creates isolated-vm V8 isolate (128MB memory limit)
+    → Injects: getThing, searchThings, ENTITY_ID via ivm.Callback bridges
+    → Executes code in sandbox with 30s timeout
+    → Script outputs __ARKHITECT_RESULT__ + __TRACE__ via captured console.log
     → Server parses stdout, updates test_runs
     → Frontend polls /api/test-runs/:id until status != running
 ```
 
 ---
 
-## Judge0 Integration
+## Test Execution (isolated-vm)
 
-- **Language**: JavaScript (Node.js), `language_id: 63`.
-- **Credentials**: From `configs` table only (Setup tab). No .env fallback for Bubble.
-- **Injection**: Server prepends `getThing`, `searchThings`, `ENTITY_ID`, `BUBBLE_BASE`, `BUBBLE_TOKEN` (fetch-based). User code uses these to call Bubble API.
-- **Output**: User code must end with `console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }))`.
-
----
-
-## Cursor Cloud Agents API
-
-- **User-provided repo**: User adds GitHub repo URL in Setup. Cursor agent works on that repo.
-- User types prompt in Test Editor → backend calls `POST https://api.cursor.com/v0/agents` with:
-  - `prompt.text`: user instruction
-  - `source.repository`: from configs (`cursor_github_repo`) or request body
-- Agent modifies files in the repo. User applies changes manually (copy back to Test Editor or sync repo).
+- **Sandbox**: Each test runs in a fresh V8 isolate with 128MB memory limit and 30s timeout
+- **Bubble API bridging**: `getThing` and `searchThings` are async `ivm.Callback` instances that delegate HTTP requests to the host Node.js process via `bubbleClient.js`
+- **Console capture**: `console.log` is shimmed to capture all output, from which `__TRACE__` and `__ARKHITECT_RESULT__` lines are parsed
+- **Security**: The isolate has no access to Node.js APIs, filesystem, or network — all external I/O is mediated through explicit callbacks
+- **Node.js requirement**: Server must be started with `--no-node-snapshot` flag (Node.js 20+)
 
 ---
 
 ## Security Considerations
 
-- Never expose Bubble/Cursor/Judge0 keys to frontend.
-- All API calls go through backend.
+- Never expose Bubble/LLM keys to frontend.
+- All API calls go through backend with JWT auth.
+- Test code runs in isolated V8 sandbox (isolated-vm) with memory and time limits.
+- Code is LLM-generated and never user-editable — no direct code injection surface.
 - Encrypt sensitive config at rest (future).
-- Rate-limit Judge0 and Cursor proxy endpoints.
-
----
-
-## Migration from Current Codebase
-
-| Legacy | New |
-|--------|-----|
-| testConfig.js | `configs` table + Setup UI |
-| orderCalculator.js | Logic inlined in `server/db/templates/orderValidation.js.txt`; seed loads it into `calculator_code` |
-| bubbleClient.js | Fetch-based helpers injected by server before Judge0 execution |
-| order.test.js, reportingDaily.test.js | Removed. Logic in seeded templates |
-| LOGIC.md | `test_suites.logic_md` (Markdown preview in Logic tab) |

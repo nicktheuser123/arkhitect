@@ -1,0 +1,113 @@
+get_tree(appId: "finark", targets: ["home"], version: "live", include_types: true, include_text: true, include_ids: true, include_layout: true)
+
+---
+
+home [cnMrp] (Page) — layout: Mode=column; Gap=20
+  FG Navigation [cnOEo] (Floating Group) — layout: Mode=column; Align=flex-start; Fit=h:true; Float=bottom; Visibility=collapse
+    Group C [cnNOR] (Group) — layout: Mode=row; Align=space-around; Fit=w:false h:true; Visibility=collapse
+      Group Dash [cnOEc] (Group) — layout: Mode=column; Align=flex-start/center; Gap=3; Fit=w:true h:true; Visibility=collapse
+        HeroIcon C [cnOEh] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+        Text E [cnOEi] (Text) — content: Dash — layout: Align=flex-start; Fit=w:false h:true
+      Group Calender [cnOEJ] (Group) — layout: Mode=column; Align=flex-start/center; Gap=3; Fit=w:true h:true; Visibility=hidden, collapse
+        HeroIcon A [cnODx] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+        Text A [cnOED] (Text) — content: Calendar — layout: Align=flex-start; Fit=w:false h:true; Visibility=collapse
+      Group Habbit [cnOER] (Group) — layout: Mode=column; Align=flex-start/center; Gap=3; Fit=w:true h:true; Visibility=collapse
+        HeroIcon B [cnOEW] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+        Text C [cnOEX] (Text) — content: Habit — layout: Align=flex-start; Fit=w:false h:true; Visibility=collapse
+      Group Today [cnOwr0] (Group) — layout: Mode=column; Align=flex-start/center; Gap=3; Fit=w:true h:true; Visibility=hidden, collapse
+        HeroIcon H [cnOwt0] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+        Text I [cnOwx0] (Text) — content: Today — layout: Align=flex-start; Fit=w:false h:true; Visibility=collapse
+      Group Session [cnORj] (Group) — layout: Mode=column; Align=flex-start/center; Gap=3; Fit=w:true h:true; Visibility=collapse
+        HeroIcon E [cnORl] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+        Text H [cnORp] (Text) — content: Urge — layout: Align=flex-start; Fit=w:false h:true; Visibility=collapse
+  Popup Signup/Login [cnOMD] (Popup) — layout: Mode=column; Align=flex-start; Fit=w:false h:true; Visibility=collapse
+    SIGNUP AND LOGIN A [cnOMJ] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top
+  Popup Questions [cnMsa] (Popup) — layout: Mode=column; Align=flex-start; Fit=w:true h:true
+    Input C [cnMsf] (Input) — layout: Align=flex-start; Fit=h:false
+    Input C [cnMsg] (Input) — layout: Align=flex-start; Fit=h:false
+    Dropdown A [cnMsh] (Dropdown) — layout: Align=flex-start; Fit=h:false
+    Button create question [cnMsb] (Button) — content: create — layout: Align=flex-start; Fit=w:true h:true
+  Group Main [cnOEv] (Group) — layout: Mode=column; Align=flex-start; Fit=w:false h:true; Visibility=collapse
+    Group Header [cnOGT] (Group) — layout: Mode=column; Align=flex-start/center; Gap=10; Fit=w:false h:true; Visibility=hidden, collapse
+      Group K [cnOGl] (Group) — layout: Mode=row; Align=space-between; Fit=w:false h:true; Visibility=collapse
+        Group N [cnOMz] (Group) — layout: Mode=column; Align=flex-start/flex-start; Fit=w:false h:true; Visibility=hidden, collapse
+        Image A [cnOGf] (Image) — layout: Align=center/flex-start; Fit=h:true; Visibility=collapse
+        Group User [cnOGs] (Group) — layout: Mode=column; Align=flex-end; Gap=3; Fit=w:true h:true; Visibility=collapse
+          HeroIcon D [cnOGx] (1662714551448x987904425844277200-AAC) — layout: Align=center; Fit=h:false; Visibility=collapse
+    wg_habit A [cnMtV] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    pg-today A [cnOqZ] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    pg_urge_reduction_session [cnMtR] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    pg-session-detur A [cnPzc] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    pg-dash A [cnNFn] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    📝 SETTINGS A [cnOzf0] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+    Group Support [cnPBG0] (Group) — layout: Mode=column; Align=flex-start; Gap=20; Fit=w:false h:true; Visibility=hidden, collapse
+      Button C [cnPBM0] (Button) — content: Feedback — layout: Align=center; Fit=w:true h:true; Visibility=collapse
+      Text D [cnPBS0] (Text) — content: For more information you can contact us at [color=#3aafa9]support@arkhitect.dev[/color] — layout: Align=flex-start; Fit=w:false h:true; Visibility=collapse
+  GF Menu [cnOJl] (Group Focus) — layout: Mode=column; Gap=5; Fit=h:true
+    group.settings [cnOJs] (Group) — layout: Mode=column; Fit=h:true
+      Text G [cnOJt] (Text) — content: Settings — layout: Fit=h:true
+    group.support [cnPBx0] (Group) — layout: Mode=column; Fit=h:true
+      Text J [cnPCC0] (Text) — content: Support — layout: Fit=h:true
+    group.logout [cnOJn] (Group) — layout: Mode=column; Fit=h:true
+      Text G [cnOJr] (Text) — content: Log out — layout: Fit=h:true
+  pg_mindset A [cnMtQ] (CustomElement) — layout: Align=flex-start; Fit=h:true; Float=top; Visibility=hidden, collapse
+  Source [cnOFM] (Popup) — layout: Mode=column; Gap=20; Fit=h:true
+    Group I [cnOFR] (Group) — layout: Mode=column; Gap=10
+      Text F [cnOFS] (Text) — content: Source — layout: Fit=h:true
+      Text F [cnOFT] (Text) — content: Reference data points — layout: Fit=h:true
+    Group [cnOFX] (Group) — layout: Mode=row; Gap=20/20; Fit=h:true
+      🧭 Source - Navigation [cnOFY] (Group) — layout: Mode=row
+        Text F [cnOFZ] (Text) — content: 🧭 Navigation — layout: Fit=w:true
+      🚩 Source [cnOFd] (Group) — layout: Mode=row
+        Text 🚩 Source - User [cnOFe] (Text) — content: 🚩 Source — layout: Fit=w:true
+    Reusables [cnOFq] (Group) — layout: Mode=row
+      🔐 SECURITY REDIRECT A [cnOFr] (CustomElement)
+      Text F [cnOFv] (Text) — content: 🔄 Reusables — layout: Fit=w:true
+    Group [cnOFw] (Group) — layout: Mode=row; Gap=20/20; Fit=h:true
+      Group [cnOFx] (Group) — layout: Mode=row
+        Text F [cnOGB] (Text) — content: ...edit me... — layout: Fit=w:true
+      Group [cnOGC] (Group) — layout: Mode=row
+        Text F [cnOGD] (Text) — layout: Fit=w:true
+    Group [cnOGH] (Group) — layout: Mode=row; Gap=20/20; Fit=h:true
+      Group [cnOGI] (Group) — layout: Mode=row
+        Text F [cnOGJ] (Text) — layout: Fit=w:true
+      Group [cnOGN] (Group) — layout: Mode=row
+        Text F [cnOGO] (Text) — layout: Fit=w:true
+  ⇥ Ribbon Menu [cnOWP0] (Floating Group) — layout: Mode=column; Gap=20; Fit=w:true
+    ribbonContainer [cnOWR0] (Group) — layout: Mode=column; Align=center; Gap=enabled; Fit=w:true
+      Image B [cnOXT0] (Image) — layout: Align=center/flex-start; Fit=h:true; Visibility=collapse
+      Nav Container [cnOWp0] (Group) — layout: Mode=column; Gap=15; Fit=w:true h:true
+        nav.sectionA [cnOXL0] (Group) — layout: Mode=row; Gap=20; Visibility=collapse
+          icon [cnOXN0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+        nav.sectionB [cnOXF0] (Group) — layout: Mode=row; Gap=20; Visibility=hidden, collapse
+          icon [cnOXH0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+        nav.sectionC [cnOWz0] (Group) — layout: Mode=row; Gap=20; Visibility=collapse
+          HeroIcon F [cnOXB0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+        nav.sectionD [cnOWt0] (Group) — layout: Mode=row; Gap=20; Visibility=collapse
+          icon [cnOWv0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+        nav.sectionE [cnOwV0] (Group) — layout: Mode=row; Gap=20; Visibility=hidden, collapse
+          icon [cnOwa0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+      Group [cnOWV0] (Group) — layout: Mode=row
+        Group [cnOWW0] (Group) — layout: Mode=column; Align=flex-end; Gap=10
+          nav.sectionE [cnOzr0] (Group) — layout: Mode=row; Gap=20; Visibility=collapse
+            icon [cnOzt0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+          nav.sectionSettings [cnOzN0] (Group) — layout: Mode=row; Gap=20; Visibility=collapse
+            icon [cnOzP0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+          group.logout [cnOWj0] (Group) — layout: Mode=row; Gap=20; Fit=h:true
+            icon [cnOWo0] (1662714551448x987904425844277200-AAC) — layout: Align=center
+  FG Create Habit [cnOsY0] (Floating Group) — layout: Mode=column; Align=flex-start; Gap=10; Fit=w:true h:true; Float=bottom
+    Button A [cnOsd0] (Button) — layout: Align=flex-end/flex-start; Fit=w:true h:true; Visibility=collapse
+  Popup Feedback [cnPAF0] (Popup) — layout: Mode=column; Align=flex-start; Fit=h:true
+    Group Feedback [cnPAK0] (Group) — layout: Mode=column; Align=flex-start; Gap=10; Fit=h:true
+      Group Header [cnPAW0] (Group) — layout: Mode=row; Align=flex-end; Fit=w:false h:true; Pin=ca
+        Text B [cnPAX0] (Text) — content: Share Feedback — layout: Align=flex-start; Fit=h:true
+        Group Close [cnPAb0] (Group) — layout: Mode=column; Align=flex-start/center; Fit=w:true h:true
+          HeroIcon K [cnPAc0] (1662714551448x987904425844277200-AAC) — layout: Align=flex-start/center; Fit=h:false
+      Group Content [cnPAL0] (Group) — layout: Mode=column; Align=flex-start; Gap=10; Fit=h:true; Pin=bc
+        MultilineInput Feedback [cnPAR0] (Multiline Input) — layout: Align=flex-start; Fit=h:true
+        FileUploader feedback [cnPAV0] (File Uploader) — layout: Align=flex-start; Fit=h:false
+        Group R [cnPAP0] (Group) — layout: Mode=row; Align=flex-end/flex-start; Gap=15; Fit=w:false h:true
+          Button B [cnPAQ0] (Button) — content: Submit — layout: Align=flex-start; Fit=h:true
+
+Pagination: returned 105/105 elements (cursor=0, limit=200).
+next_cursor: null

@@ -8,23 +8,26 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
+import { requireAuth } from "./middleware/auth.js";
 import configRouter from "./routes/config.js";
 import testSuitesRouter from "./routes/testSuites.js";
 import testRunsRouter from "./routes/testRuns.js";
-import executeRouter from "./routes/execute.js";
 import aiRouter from "./routes/ai.js";
 import codeVersionsRouter from "./routes/codeVersions.js";
+import chatRouter from "./routes/chat.js";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
+app.use("/api", requireAuth);
+
 app.use("/api/config", configRouter);
 app.use("/api/test-suites", testSuitesRouter);
 app.use("/api/test-runs", testRunsRouter);
-app.use("/api/execute", executeRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/test-suites", codeVersionsRouter);
+app.use("/api/chat", chatRouter);
 
 // Serve static frontend in production (when dist exists)
 const clientDist = path.join(__dirname, "..", "client", "dist");

@@ -1,133 +1,136 @@
+import { supabase } from "./lib/supabase";
+
 const API = "/api";
 
-export async function getConfig() {
-  const r = await fetch(`${API}/config`);
+async function authFetch(url, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error("Not authenticated");
+  }
+
+  const headers = {
+    ...options.headers,
+    Authorization: `Bearer ${session.access_token}`,
+  };
+
+  const r = await fetch(url, { ...options, headers });
+
+  if (r.status === 401) {
+    await supabase.auth.signOut();
+    throw new Error("Session expired");
+  }
   if (!r.ok) throw new Error(await r.text());
   return r.json();
+}
+
+export async function getConfig() {
+  return authFetch(`${API}/config`);
 }
 
 export async function saveConfig(config) {
   const items = Object.entries(config).map(([key, value]) => ({ key, value }));
-  const r = await fetch(`${API}/config/batch`, {
+  return authFetch(`${API}/config/batch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(items),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
 export async function getTestSuites() {
-  const r = await fetch(`${API}/test-suites`);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(`${API}/test-suites`);
 }
 
 export async function getTestSuite(id) {
-  const r = await fetch(`${API}/test-suites/${id}`);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(`${API}/test-suites/${id}`);
 }
 
 export async function createTestSuite(data) {
-  const r = await fetch(`${API}/test-suites`, {
+  return authFetch(`${API}/test-suites`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
 export async function updateTestSuite(id, data) {
-  const r = await fetch(`${API}/test-suites/${id}`, {
+  return authFetch(`${API}/test-suites/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
 export async function deleteTestSuite(id) {
-  const r = await fetch(`${API}/test-suites/${id}`, { method: "DELETE" });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(`${API}/test-suites/${id}`, { method: "DELETE" });
 }
 
 export async function runTest(suiteId, entityId) {
-  const r = await fetch(`${API}/test-runs`, {
+  return authFetch(`${API}/test-runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ suite_id: suiteId, entity_id: entityId }),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
 export async function getTestRuns(suiteId) {
   const url = suiteId ? `${API}/test-runs?suite_id=${suiteId}` : `${API}/test-runs`;
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(url);
 }
 
 export async function getTestRun(id) {
-  const r = await fetch(`${API}/test-runs/${id}`);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
-}
-
-export async function executeCode(code, entityId) {
-  const r = await fetch(`${API}/execute`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, entity_id: entityId }),
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(`${API}/test-runs/${id}`);
 }
 
 export async function generateCode(prompt) {
-  const r = await fetch(`${API}/ai/generate`, {
+  return authFetch(`${API}/ai/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
-export async function editCode(code, instruction) {
-  const r = await fetch(`${API}/ai/edit`, {
+export async function editCode(suiteId, instruction) {
+  return authFetch(`${API}/ai/edit`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, instruction }),
+    body: JSON.stringify({ suiteId, instruction }),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
-export async function refineCode(code, corrections) {
-  const r = await fetch(`${API}/ai/refine`, {
+export async function refineCode(suiteId, corrections) {
+  return authFetch(`${API}/ai/refine`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, corrections }),
+    body: JSON.stringify({ suiteId, corrections }),
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+}
+
+export async function confirmTestSuite(suiteId, assumptions) {
+  return authFetch(`${API}/test-suites/${suiteId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assumptions, change_description: "Confirmed assumptions and saved" }),
+  });
 }
 
 export async function getCodeVersions(suiteId) {
-  const r = await fetch(`${API}/test-suites/${suiteId}/versions`);
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  return authFetch(`${API}/test-suites/${suiteId}/versions`);
 }
 
 export async function restoreCodeVersion(suiteId, versionId) {
-  const r = await fetch(`${API}/test-suites/${suiteId}/versions/${versionId}/restore`, {
+  return authFetch(`${API}/test-suites/${suiteId}/versions/${versionId}/restore`, {
     method: "POST",
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+}
+
+export async function getChatMessages(suiteId) {
+  return authFetch(`${API}/chat/${suiteId}`);
+}
+
+export async function sendChatMessage(suiteId, { mode, content, testContext, confirmedAssumptions }) {
+  return authFetch(`${API}/chat/${suiteId}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, content, testContext, confirmedAssumptions }),
+  });
 }

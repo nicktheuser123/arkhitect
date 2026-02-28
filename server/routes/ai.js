@@ -1,22 +1,40 @@
 import { Router } from "express";
-import { query } from "../db/index.js";
 import {
   generateTestCode,
   editTestCode,
   refineTestCode,
+  askAboutTest,
 } from "../services/llm.js";
 
 const router = Router();
 
-async function loadLLMConfig() {
-  const result = await query(
-    "SELECT key, value FROM configs WHERE key IN ('llm_api_base', 'llm_api_key', 'llm_model')"
-  );
-  const cfg = Object.fromEntries(result.rows.map((r) => [r.key, r.value]));
-  if (!cfg.llm_api_base || !cfg.llm_api_key || !cfg.llm_model) {
-    return null;
-  }
+async function loadLLMConfig(supabase) {
+  const { data, error } = await supabase
+    .from("configs")
+    .select("key, value")
+    .in("key", ["llm_api_base", "llm_api_key", "llm_model"]);
+  if (error) return null;
+  const cfg = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
+  if (!cfg.llm_api_base || !cfg.llm_api_key || !cfg.llm_model) return null;
   return cfg;
+}
+
+async function loadSuiteCode(supabase, suiteId) {
+  const { data, error } = await supabase
+    .from("test_suites")
+    .select("calculator_code")
+    .eq("id", suiteId)
+    .single();
+  if (error) throw error;
+  return data?.calculator_code || "";
+}
+
+async function saveSuiteCode(supabase, suiteId, code) {
+  const { error } = await supabase
+    .from("test_suites")
+    .update({ calculator_code: code, updated_at: new Date().toISOString() })
+    .eq("id", suiteId);
+  if (error) throw error;
 }
 
 router.post("/generate", async (req, res) => {
@@ -24,7 +42,7 @@ router.post("/generate", async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: "prompt is required" });
 
-    const cfg = await loadLLMConfig();
+    const cfg = await loadLLMConfig(req.supabase);
     if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
 
     const result = await generateTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, prompt);
@@ -37,14 +55,22 @@ router.post("/generate", async (req, res) => {
 
 router.post("/edit", async (req, res) => {
   try {
-    const { code, instruction } = req.body;
-    if (!code || !instruction) return res.status(400).json({ error: "code and instruction are required" });
+    const { suiteId, instruction } = req.body;
+    if (!suiteId || !instruction) {
+      return res.status(400).json({ error: "suiteId and instruction are required" });
+    }
 
-    const cfg = await loadLLMConfig();
+    const cfg = await loadLLMConfig(req.supabase);
     if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
 
+    const code = await loadSuiteCode(req.supabase, suiteId);
     const result = await editTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, instruction);
-    res.json(result);
+
+    if (result.code) {
+      await saveSuiteCode(req.supabase, suiteId, result.code);
+    }
+
+    res.json({ assumptions: result.assumptions || [] });
   } catch (err) {
     console.error("AI edit error:", err);
     res.status(500).json({ error: err.message });
@@ -53,18 +79,44 @@ router.post("/edit", async (req, res) => {
 
 router.post("/refine", async (req, res) => {
   try {
-    const { code, corrections } = req.body;
-    if (!code || !corrections || !corrections.length) {
-      return res.status(400).json({ error: "code and corrections are required" });
+    const { suiteId, corrections } = req.body;
+    if (!suiteId || !corrections || !corrections.length) {
+      return res.status(400).json({ error: "suiteId and corrections are required" });
     }
 
-    const cfg = await loadLLMConfig();
+    const cfg = await loadLLMConfig(req.supabase);
     if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
 
+    const code = await loadSuiteCode(req.supabase, suiteId);
     const result = await refineTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, corrections);
-    res.json(result);
+
+    if (result.code) {
+      await saveSuiteCode(req.supabase, suiteId, result.code);
+    }
+
+    res.json({ assumptions: result.assumptions || [] });
   } catch (err) {
     console.error("AI refine error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/ask", async (req, res) => {
+  try {
+    const { suiteId, question, testContext } = req.body;
+    if (!question) return res.status(400).json({ error: "question is required" });
+
+    const cfg = await loadLLMConfig(req.supabase);
+    if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
+
+    const code = suiteId ? await loadSuiteCode(req.supabase, suiteId) : "";
+    const result = await askAboutTest(
+      cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model,
+      code, question, testContext || {}
+    );
+    res.json(result);
+  } catch (err) {
+    console.error("AI ask error:", err);
     res.status(500).json({ error: err.message });
   }
 });

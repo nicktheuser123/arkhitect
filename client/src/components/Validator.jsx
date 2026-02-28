@@ -2,24 +2,24 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getTestSuites,
   getTestSuite,
-  updateTestSuite,
-  generateCode,
   editCode,
   refineCode,
+  confirmTestSuite,
 } from "../api";
 import ValidatorHeader from "./Validator/ValidatorHeader";
-import PromptPanel from "./Validator/PromptPanel";
-import AssumptionChecklist from "./Validator/AssumptionChecklist";
+import ChatPanel from "./Validator/ChatPanel";
 import TestRunner from "./Validator/TestRunner";
 import VersionHistory from "./Validator/VersionHistory";
 
 export default function Validator() {
   const [suites, setSuites] = useState([]);
   const [selectedSuite, setSelectedSuite] = useState("");
-  const [entityId, setEntityId] = useState("");
+  const [entityId, setEntityId] = useState(() => {
+    return localStorage.getItem("arkhitect_lastEntityId") || "";
+  });
 
   const [suite, setSuite] = useState(null);
-  const [code, setCode] = useState("");
+  const [hasCode, setHasCode] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,15 +30,20 @@ export default function Validator() {
 
   const [showVersions, setShowVersions] = useState(false);
   const [versionKey, setVersionKey] = useState(0);
+  const [displayRun, setDisplayRun] = useState(null);
 
   useEffect(() => {
     getTestSuites().then(setSuites).catch(() => {});
   }, []);
 
   useEffect(() => {
+    if (entityId) localStorage.setItem("arkhitect_lastEntityId", entityId);
+  }, [entityId]);
+
+  useEffect(() => {
     if (!selectedSuite) {
       setSuite(null);
-      setCode("");
+      setHasCode(false);
       setAssumptions([]);
       setConfirmedSet(new Set());
       return;
@@ -47,34 +52,23 @@ export default function Validator() {
     getTestSuite(selectedSuite)
       .then((s) => {
         setSuite(s);
-        setCode(s.calculator_code || "");
-        setAssumptions(s.assumptions || []);
+        setHasCode(!!(s.calculator_code && s.calculator_code.trim()));
+        setAssumptions([]);
         setConfirmedSet(new Set());
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [selectedSuite]);
 
-  const handleGenerate = useCallback(async (prompt) => {
-    setError("");
-    setGenerating(true);
-    try {
-      const hasCode = code && code.trim();
-      let result;
-      if (hasCode) {
-        result = await editCode(code, prompt);
-      } else {
-        result = await generateCode(prompt);
-      }
-      setCode(result.code);
-      setAssumptions(result.assumptions || []);
-      setConfirmedSet(new Set());
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setGenerating(false);
-    }
-  }, [code]);
+  const handleChatResult = useCallback((result) => {
+    if (result.hasCode != null) setHasCode(result.hasCode);
+    setAssumptions(result.assumptions || []);
+    setConfirmedSet(new Set());
+  }, []);
+
+  const handleDisplayRunChange = useCallback((run) => {
+    setDisplayRun(run);
+  }, []);
 
   const handleConfirmAssumption = useCallback((id) => {
     setConfirmedSet((prev) => {
@@ -88,54 +82,52 @@ export default function Validator() {
     setError("");
     setRefining(true);
     try {
-      const result = await refineCode(code, [
+      const result = await refineCode(selectedSuite, [
         { assumptionId, correction: correctionText },
       ]);
-      setCode(result.code);
       setAssumptions(result.assumptions || []);
       setConfirmedSet(new Set());
+      setHasCode(true);
     } catch (e) {
       setError(e.message);
     } finally {
       setRefining(false);
     }
-  }, [code]);
+  }, [selectedSuite]);
 
   const handleConfirmAll = useCallback(async () => {
-    if (!selectedSuite || !code) return;
+    if (!selectedSuite) return;
     setError("");
     try {
-      const updated = await updateTestSuite(selectedSuite, {
-        calculator_code: code,
-        assumptions,
-        created_by: "ai",
-        change_description: "Confirmed assumptions and saved",
-      });
+      const updated = await confirmTestSuite(selectedSuite, assumptions);
       setSuite(updated);
+      setHasCode(!!(updated.calculator_code && updated.calculator_code.trim()));
+      setAssumptions([]);
+      setConfirmedSet(new Set());
       setVersionKey((k) => k + 1);
     } catch (e) {
       setError(e.message);
     }
-  }, [selectedSuite, code, assumptions]);
+  }, [selectedSuite, assumptions]);
 
   const handleTraceFeedback = useCallback(async (feedbackText) => {
     setError("");
     setGenerating(true);
     try {
-      const result = await editCode(code, feedbackText);
-      setCode(result.code);
+      const result = await editCode(selectedSuite, feedbackText);
       setAssumptions(result.assumptions || []);
       setConfirmedSet(new Set());
+      setHasCode(true);
     } catch (e) {
       setError(e.message);
     } finally {
       setGenerating(false);
     }
-  }, [code]);
+  }, [selectedSuite]);
 
   const handleVersionRestore = useCallback((restoredSuite) => {
-    setCode(restoredSuite.calculator_code || "");
     setSuite(restoredSuite);
+    setHasCode(!!(restoredSuite.calculator_code && restoredSuite.calculator_code.trim()));
     setAssumptions(restoredSuite.assumptions || []);
     setConfirmedSet(new Set());
     setVersionKey((k) => k + 1);
@@ -158,25 +150,29 @@ export default function Validator() {
       );
     }
 
+    const testContext = {
+      entityId,
+      expectedVsReceived: displayRun?.expected_vs_received,
+      traceSteps: displayRun?.trace_steps,
+    };
+
     return (
       <>
-        <div className="validator-panel" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <PromptPanel
-            onGenerate={handleGenerate}
-            generating={generating}
-            hasCode={!!(code && code.trim())}
+        <div className="validator-panel" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", minHeight: 0, flex: 1, overflow: "hidden" }}>
+          <ChatPanel
+            suiteId={selectedSuite}
+            hasCode={hasCode}
+            testContext={testContext}
+            onResult={handleChatResult}
+            onError={setError}
+            assumptions={assumptions}
+            confirmedSet={confirmedSet}
+            confirmedAssumptions={suite?.assumptions || []}
+            onConfirm={handleConfirmAssumption}
+            onCorrection={handleCorrection}
+            onConfirmAll={handleConfirmAll}
+            refining={refining}
           />
-
-          {assumptions.length > 0 && (
-            <AssumptionChecklist
-              assumptions={assumptions}
-              confirmedSet={confirmedSet}
-              onConfirm={handleConfirmAssumption}
-              onCorrection={handleCorrection}
-              onConfirmAll={handleConfirmAll}
-              refining={refining}
-            />
-          )}
 
           <div style={{ flexShrink: 0 }}>
             <button
@@ -204,6 +200,7 @@ export default function Validator() {
               entityId={entityId}
               suites={suites}
               onFeedback={handleTraceFeedback}
+              onDisplayRunChange={handleDisplayRunChange}
             />
           </div>
         </div>

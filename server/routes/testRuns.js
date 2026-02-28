@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { query } from "../db/index.js";
 import { executeTest } from "../services/testRunner.js";
 
 const router = Router();
@@ -7,14 +6,24 @@ const router = Router();
 router.get("/", async (req, res) => {
   try {
     const { suite_id } = req.query;
-    let sql = "SELECT tr.*, ts.name as suite_name FROM test_runs tr JOIN test_suites ts ON ts.id = tr.test_suite_id ORDER BY tr.created_at DESC LIMIT 100";
-    const params = [];
+    let query = req.supabase
+      .from("test_runs")
+      .select("*, test_suites(name)")
+      .order("created_at", { ascending: false })
+      .limit(100);
+
     if (suite_id) {
-      sql = "SELECT tr.*, ts.name as suite_name FROM test_runs tr JOIN test_suites ts ON ts.id = tr.test_suite_id WHERE tr.test_suite_id = $1 ORDER BY tr.created_at DESC LIMIT 100";
-      params.push(suite_id);
+      query = query.eq("test_suite_id", suite_id);
     }
-    const result = await query(sql, params);
-    res.json(result.rows);
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const rows = (data || []).map(({ test_suites: ts, ...rest }) => ({
+      ...rest,
+      suite_name: ts?.name,
+    }));
+    res.json(rows);
   } catch (err) {
     console.error("Test runs GET error:", err);
     res.status(500).json({ error: err.message });
@@ -24,14 +33,16 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await query(
-      "SELECT tr.*, ts.name as suite_name FROM test_runs tr JOIN test_suites ts ON ts.id = tr.test_suite_id WHERE tr.id = $1",
-      [id]
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Test run not found" });
-    }
-    res.json(result.rows[0]);
+    const { data, error } = await req.supabase
+      .from("test_runs")
+      .select("*, test_suites(name)")
+      .eq("id", id)
+      .single();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Test run not found" });
+
+    const { test_suites: ts, ...rest } = data;
+    res.json({ ...rest, suite_name: ts?.name });
   } catch (err) {
     console.error("Test run GET error:", err);
     res.status(500).json({ error: err.message });
@@ -45,25 +56,29 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "suite_id and entity_id required" });
     }
 
-    const suiteRes = await query(
-      "SELECT * FROM test_suites WHERE id = $1",
-      [suite_id]
-    );
-    if (suiteRes.rows.length === 0) {
+    const { data: suite, error: sErr } = await req.supabase
+      .from("test_suites")
+      .select("*")
+      .eq("id", suite_id)
+      .single();
+    if (sErr || !suite) {
       return res.status(404).json({ error: "Test suite not found" });
     }
 
-    const configRes = await query("SELECT key, value FROM configs");
-    const config = Object.fromEntries(configRes.rows.map((r) => [r.key, r.value]));
+    const { data: cfgRows } = await req.supabase
+      .from("configs")
+      .select("key, value");
+    const config = Object.fromEntries((cfgRows || []).map((r) => [r.key, r.value]));
 
-    const insertRes = await query(
-      `INSERT INTO test_runs (test_suite_id, entity_id, status) VALUES ($1, $2, 'running') RETURNING *`,
-      [suite_id, entity_id]
-    );
-    const run = insertRes.rows[0];
+    const { data: run, error: rErr } = await req.supabase
+      .from("test_runs")
+      .insert({ test_suite_id: suite_id, entity_id, status: "running" })
+      .select()
+      .single();
+    if (rErr) throw rErr;
     res.status(202).json(run);
 
-    executeTest(run.id, suiteRes.rows[0], entity_id, config).catch((err) => {
+    executeTest(run.id, suite, entity_id, config).catch((err) => {
       console.error("Background test execution error:", err);
     });
   } catch (err) {

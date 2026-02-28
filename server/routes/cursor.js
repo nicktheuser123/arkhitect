@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { createCursorClient } from "../services/cursorAgent.js";
-import { query } from "../db/index.js";
 
 const router = Router();
 
@@ -10,12 +9,20 @@ router.post("/agent", async (req, res) => {
     let apiKey = req.body.api_key || req.headers["x-cursor-api-key"];
     let repo = repository;
     if (!repo) {
-      const repoRes = await query("SELECT value FROM configs WHERE key = $1", ["cursor_github_repo"]);
-      repo = repoRes.rows[0]?.value;
+      const { data } = await req.supabase
+        .from("configs")
+        .select("value")
+        .eq("key", "cursor_github_repo")
+        .maybeSingle();
+      repo = data?.value;
     }
     if (!apiKey) {
-      const configRes = await query("SELECT value FROM configs WHERE key = $1", ["cursor_api_key"]);
-      apiKey = configRes.rows[0]?.value;
+      const { data } = await req.supabase
+        .from("configs")
+        .select("value")
+        .eq("key", "cursor_api_key")
+        .maybeSingle();
+      apiKey = data?.value;
     }
     if (!repo) {
       return res.status(400).json({ error: "GitHub repo URL required. Add it in Setup tab." });
@@ -37,8 +44,12 @@ router.get("/agent/:id", async (req, res) => {
   try {
     let apiKey = req.headers["x-cursor-api-key"];
     if (!apiKey) {
-      const configRes = await query("SELECT value FROM configs WHERE key = $1", ["cursor_api_key"]);
-      apiKey = configRes.rows[0]?.value;
+      const { data } = await req.supabase
+        .from("configs")
+        .select("value")
+        .eq("key", "cursor_api_key")
+        .maybeSingle();
+      apiKey = data?.value;
     }
     const client = createCursorClient(apiKey);
     const agent = await client.getAgentStatus(req.params.id);
@@ -54,8 +65,12 @@ router.post("/agent/:id/followup", async (req, res) => {
     const { prompt } = req.body;
     let apiKey = req.headers["x-cursor-api-key"];
     if (!apiKey) {
-      const configRes = await query("SELECT value FROM configs WHERE key = $1", ["cursor_api_key"]);
-      apiKey = configRes.rows[0]?.value;
+      const { data } = await req.supabase
+        .from("configs")
+        .select("value")
+        .eq("key", "cursor_api_key")
+        .maybeSingle();
+      apiKey = data?.value;
     }
     const client = createCursorClient(apiKey);
     const result = await client.addFollowup(req.params.id, prompt);

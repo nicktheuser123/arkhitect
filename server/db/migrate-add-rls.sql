@@ -1,90 +1,39 @@
--- Arkhitect database schema (Supabase)
--- Run via: node db/migrate.js   OR   apply in Supabase SQL editor
--- Requires: Supabase project with auth.users table
+-- Migration: Add user_id columns with DEFAULT auth.uid(), enable RLS, and fix constraints
+-- For existing databases that were created before user_id / RLS support.
+-- Safe to re-run (IF NOT EXISTS / IF EXISTS guards throughout).
 
-CREATE TABLE IF NOT EXISTS configs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  key VARCHAR(128) NOT NULL,
-  value TEXT,
-  user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (key, user_id)
-);
+-- 1. Add user_id columns with default
+ALTER TABLE configs ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id);
+ALTER TABLE test_suites ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id);
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id);
+ALTER TABLE code_versions ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id);
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id);
 
-CREATE TABLE IF NOT EXISTS test_suites (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(256) NOT NULL,
-  description TEXT,
-  calculator_code TEXT DEFAULT '',
-  logic_md TEXT DEFAULT '',
-  assumptions JSONB,
-  run_order_tests BOOLEAN DEFAULT true,
-  run_reporting_daily_tests BOOLEAN DEFAULT true,
-  user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- 2. Fix configs unique constraint: (key) → (key, user_id)
+ALTER TABLE configs DROP CONSTRAINT IF EXISTS configs_key_key;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'configs_key_user_unique'
+  ) THEN
+    ALTER TABLE configs ADD CONSTRAINT configs_key_user_unique UNIQUE (key, user_id);
+  END IF;
+END $$;
 
-CREATE TABLE IF NOT EXISTS test_runs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  test_suite_id UUID NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
-  entity_id VARCHAR(256) NOT NULL,
-  status VARCHAR(32) NOT NULL DEFAULT 'pending',
-  logs TEXT,
-  expected_vs_received JSONB,
-  trace_steps JSONB,
-  passed_count INT DEFAULT 0,
-  failed_count INT DEFAULT 0,
-  error_message TEXT,
-  user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_test_runs_suite ON test_runs(test_suite_id);
-CREATE INDEX IF NOT EXISTS idx_test_runs_created ON test_runs(created_at DESC);
-
-CREATE TABLE IF NOT EXISTS code_versions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  test_suite_id UUID NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
-  calculator_code TEXT NOT NULL,
-  summary TEXT,
-  change_description TEXT,
-  version_number INT NOT NULL,
-  created_by VARCHAR(32) DEFAULT 'user',
-  user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_code_versions_suite
-  ON code_versions(test_suite_id, version_number DESC);
-
-CREATE TABLE IF NOT EXISTS chat_messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  test_suite_id UUID NOT NULL REFERENCES test_suites(id) ON DELETE CASCADE,
-  role VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  mode VARCHAR(16) NOT NULL CHECK (mode IN ('edit', 'ask')),
-  metadata JSONB,
-  user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_suite ON chat_messages(test_suite_id, created_at ASC);
-
--- User-scoped indexes for RLS performance
+-- 3. Indexes for RLS policy performance
 CREATE INDEX IF NOT EXISTS idx_configs_user ON configs(user_id);
 CREATE INDEX IF NOT EXISTS idx_test_suites_user ON test_suites(user_id);
 CREATE INDEX IF NOT EXISTS idx_test_runs_user ON test_runs(user_id);
 CREATE INDEX IF NOT EXISTS idx_code_versions_user ON code_versions(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_user ON chat_messages(user_id);
 
--- Enable Row Level Security
+-- 4. Enable Row Level Security on all tables
 ALTER TABLE configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_suites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE test_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE code_versions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
--- RLS policies: users can only access their own rows
+-- 5. RLS policies (idempotent via DO block)
 DO $$ BEGIN
   -- configs
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view own configs') THEN
@@ -157,7 +106,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Grant table access to authenticated role
+-- 6. Grant table access to authenticated role
 GRANT SELECT, INSERT, UPDATE, DELETE ON configs TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON test_suites TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON test_runs TO authenticated;

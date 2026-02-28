@@ -140,6 +140,7 @@ export default function AssumptionChecklist({
   onCorrection,
   onConfirmAll,
   refining,
+  embedded = false,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTexts, setEditTexts] = useState({});
@@ -168,17 +169,26 @@ export default function AssumptionChecklist({
     onCorrection(assumptionId, text);
   };
 
+  const containerStyle = embedded
+    ? {
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        overflow: "hidden",
+      }
+    : {
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 4,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minHeight: 0,
+      };
+
   return (
-    <div style={{
-      background: "var(--surface)",
-      border: "1px solid var(--border)",
-      borderRadius: 4,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column",
-      flex: 1,
-      minHeight: 0,
-    }}>
+    <div style={containerStyle}>
       <div style={{
         padding: "0.5rem 0.75rem",
         borderBottom: "1px solid var(--border)",
@@ -198,7 +208,15 @@ export default function AssumptionChecklist({
         </span>
       </div>
 
-      <div className="scrollbar-overlay" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+      <div
+        className="scrollbar-overlay"
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          minHeight: 0,
+          ...(embedded && { maxHeight: 180 }),
+        }}
+      >
         {CATEGORY_ORDER.map((cat) => {
           const items = grouped[cat];
           if (!items || items.length === 0) return null;

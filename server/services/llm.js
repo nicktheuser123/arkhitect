@@ -14,22 +14,22 @@ Output format — the test MUST end with:
 const EXAMPLE_SNIPPET = `
 Example test (order validation, abbreviated):
   const order = await getThing("GP_Order", ENTITY_ID);
-  console.log("__TRACE__" + JSON.stringify({ step: 1, title: "Fetched Order", type: "fetch", data: { "Ticket Count": order["Ticket Count"], "Gross Amount": order["Gross Amount"] } }));
+  console.log("__TRACE__" + JSON.stringify({ step: 1, title: "Fetched Order", type: "fetch", entityType: "GP_Order", fields: ["Ticket Count", "Gross Amount"], data: { "Ticket Count": order["Ticket Count"], "Gross Amount": order["Gross Amount"] } }));
   const addOns = await Promise.all((order["Add Ons"] || []).map(id => getThing("GP_AddOn", id)));
-  console.log("__TRACE__" + JSON.stringify({ step: 2, title: "Fetched " + addOns.length + " Add Ons", type: "fetch", data: addOns.map(a => ({ Type: a["OS AddOnType"], Qty: a.Quantity, Price: a.Price })) }));
+  console.log("__TRACE__" + JSON.stringify({ step: 2, title: "Fetched Add Ons", type: "fetch", entityType: "GP_AddOn", count: addOns.length, fields: ["OS AddOnType", "Quantity", "Price"], data: addOns.map(a => ({ Type: a["OS AddOnType"], Qty: a.Quantity, Price: a.Price })) }));
   let ticketCount = 0, grossAmount = 0;
   addOns.forEach(addOn => {
     if (addOn["OS AddOnType"] !== "Ticket") return;
     ticketCount += addOn.Quantity || 0;
-    grossAmount += (ticketType.Price || 0) * (addOn.Quantity || 0);
+    grossAmount += (addOn.Price || 0) * (addOn.Quantity || 0);
   });
-  console.log("__TRACE__" + JSON.stringify({ step: 3, title: "Calculated Ticket Count", type: "calculation", data: { formula: "Sum of Quantity where Type = Ticket", value: ticketCount } }));
-  console.log("__TRACE__" + JSON.stringify({ step: 4, title: "Calculated Gross Amount", type: "calculation", data: { formula: "Sum of (Price × Quantity) for tickets", value: grossAmount.toFixed(2) } }));
+  console.log("__TRACE__" + JSON.stringify({ step: 3, title: "Calculated Ticket Count", type: "calculation", formula: "Sum of Quantity where Type = Ticket", value: ticketCount, data: { ticketAddOnCount: addOns.filter(a => a["OS AddOnType"] === "Ticket").length } }));
+  console.log("__TRACE__" + JSON.stringify({ step: 4, title: "Calculated Gross Amount", type: "calculation", formula: "Sum of (Price × Quantity) for tickets", value: grossAmount.toFixed(2), data: { ticketCount, pricePerTicket: addOns.find(a => a["OS AddOnType"] === "Ticket")?.Price } }));
   const results = [
     { label: "Ticket Count", expected: ticketCount, received: order["Ticket Count"], pass: ticketCount === order["Ticket Count"] },
     { label: "Gross Amount", expected: grossAmount.toFixed(2), received: Number(order["Gross Amount"]).toFixed(2), pass: Math.abs(grossAmount - order["Gross Amount"]) < 0.01 },
   ];
-  console.log("__TRACE__" + JSON.stringify({ step: 5, title: "Assertions", type: "assertion", data: results }));
+  console.log("__TRACE__" + JSON.stringify({ step: 5, title: "Assertions", type: "assertion", comparison: "Expected vs Bubble GP_Order fields", data: results }));
   const passed = results.filter(r => r.pass).length;
   const failed = results.filter(r => !r.pass).length;
   console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }));
@@ -38,11 +38,33 @@ Example test (order validation, abbreviated):
 const TRACE_INSTRUCTIONS = `
 IMPORTANT — Trace logging:
 You MUST insert console.log("__TRACE__" + JSON.stringify({...})) calls between every logical step.
-Each trace entry has: { step: <number>, title: <string>, type: <"fetch"|"calculation"|"assertion">, data: <object|array> }
-- After every data fetch, emit a "fetch" trace showing the key fields retrieved.
-- After every calculation, emit a "calculation" trace showing the formula description and computed value.
-- Before the final __ARKHITECT_RESULT__, emit an "assertion" trace with the results array.
-This lets non-technical users see the math step-by-step with real numbers.
+
+Every trace entry MUST have: { step: <number>, title: <string>, type: <"fetch"|"calculation"|"assertion">, data: <object|array> }
+
+Strict schema per type — do NOT deviate from these field names:
+
+FETCH (single record):
+  { step, title, type: "fetch", entityType: "GP_Order", fields: ["Field A", "Field B"], data: { "Field A": value, "Field B": value } }
+  - entityType: the exact Bubble data type name (e.g. "GP_Order", "GP_AddOn") — REQUIRED
+  - fields: array of Bubble field names being used from this fetch — REQUIRED
+  - data: object with the raw fetched values for those fields
+
+FETCH (array of records):
+  { step, title, type: "fetch", entityType: "GP_AddOn", count: N, fields: ["Field A", "Field B"], data: [ {...}, {...} ] }
+  - count: the number of records fetched — REQUIRED for array fetches
+  - data: array of objects, each containing the fields used from that record
+
+CALCULATION:
+  { step, title, type: "calculation", formula: "plain-English formula", value: <computed result>, data: { <supporting inputs used in the calculation> } }
+  - formula: human-readable description of the calculation — REQUIRED
+  - value: the computed scalar result — REQUIRED
+  - data: object with the input values that fed into the formula (NOT a repeat of formula/value)
+
+ASSERTION:
+  { step, title, type: "assertion", comparison: "Expected vs Bubble <EntityType> <FieldName>", data: <results array> }
+  - comparison: plain-English description of what is being compared, naming the Bubble entity and field — REQUIRED
+  - data: the assertion results array (same format as the __ARKHITECT_RESULT__ results)
+  - DO NOT use "matchingAgainst" — always use "comparison"
 `;
 
 const ASSUMPTIONS_INSTRUCTIONS = `
@@ -177,10 +199,21 @@ export async function generateTestCode(baseURL, apiKey, model, description) {
   return parseJSON(raw);
 }
 
-export async function editTestCode(baseURL, apiKey, model, existingCode, instruction) {
+export async function editTestCode(baseURL, apiKey, model, existingCode, instruction, confirmedAssumptions = []) {
+  let userContent = `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nInstruction: ${instruction}`;
+
+  if (confirmedAssumptions && confirmedAssumptions.length > 0) {
+    const descriptions = confirmedAssumptions
+      .map((a) => (typeof a === "object" && a.description ? a.description : String(a)))
+      .filter(Boolean);
+    if (descriptions.length > 0) {
+      userContent += `\n\nIMPORTANT: The user has already confirmed these assumptions. Do NOT include them in your "assumptions" array. Only return assumptions that are NEW or that have changed from the previous version:\n${descriptions.map((d) => `- ${d}`).join("\n")}`;
+    }
+  }
+
   const raw = await chat(baseURL, apiKey, model, [
     { role: "system", content: EDIT_SYSTEM_PROMPT },
-    { role: "user", content: `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nInstruction: ${instruction}` },
+    { role: "user", content: userContent },
   ], true);
   return parseJSON(raw);
 }
@@ -195,4 +228,29 @@ export async function refineTestCode(baseURL, apiKey, model, existingCode, corre
     { role: "user", content: `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nCorrections to apply:\n${correctionText}` },
   ], true);
   return parseJSON(raw);
+}
+
+const ASK_SYSTEM_PROMPT = `You are a helpful assistant for Arkhitect, a Bubble.io validation platform.
+The user has test code that fetches data from Bubble, computes expected values, and compares them to actual values.
+You answer questions about the test code, how values are calculated, why assertions might fail, or any related topic.
+Do NOT modify code. Provide clear, plain-English explanations.`;
+
+export async function askAboutTest(baseURL, apiKey, model, code, question, testContext = {}) {
+  let contextBlock = `Current test code:\n\`\`\`javascript\n${code || "// No code yet"}\n\`\`\`\n\n`;
+  if (testContext.entityId) {
+    contextBlock += `Entity ID used in last run: ${testContext.entityId}\n\n`;
+  }
+  if (testContext.expectedVsReceived && testContext.expectedVsReceived.length > 0) {
+    contextBlock += `Last test results (expected vs received):\n${JSON.stringify(testContext.expectedVsReceived, null, 2)}\n\n`;
+  }
+  if (testContext.traceSteps && testContext.traceSteps.length > 0) {
+    contextBlock += `Step-by-step trace from last run:\n${JSON.stringify(testContext.traceSteps, null, 2)}\n\n`;
+  }
+  const userContent = contextBlock + `Question: ${question}`;
+
+  const answer = await chat(baseURL, apiKey, model, [
+    { role: "system", content: ASK_SYSTEM_PROMPT },
+    { role: "user", content: userContent },
+  ], false);
+  return { answer };
 }
