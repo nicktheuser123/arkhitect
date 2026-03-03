@@ -44,7 +44,7 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { name, description, calculator_code, logic_md, run_order_tests, run_reporting_daily_tests } = req.body;
+    const { name, description, calculator_code, logic_md, run_order_tests, run_reporting_daily_tests, bubble_app_url } = req.body;
     const { data, error } = await req.supabase
       .from("test_suites")
       .insert({
@@ -54,6 +54,7 @@ router.post("/", async (req, res) => {
         logic_md: logic_md ?? "",
         run_order_tests: run_order_tests ?? true,
         run_reporting_daily_tests: run_reporting_daily_tests ?? true,
+        bubble_app_url: bubble_app_url ?? null,
       })
       .select()
       .single();
@@ -114,6 +115,7 @@ router.put("/:id", async (req, res) => {
     if (run_order_tests != null) updates.run_order_tests = run_order_tests;
     if (run_reporting_daily_tests != null) updates.run_reporting_daily_tests = run_reporting_daily_tests;
     if (assumptions != null) updates.assumptions = assumptions;
+    if (req.body.bubble_app_url != null) updates.bubble_app_url = req.body.bubble_app_url;
     updates.updated_at = new Date().toISOString();
 
     const { data, error } = await req.supabase
@@ -127,61 +129,6 @@ router.put("/:id", async (req, res) => {
     res.json(data);
   } catch (err) {
     console.error("Test suite PUT error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post("/:id/confirm", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { assumptions, change_description } = req.body;
-
-    const { data: suite, error: sErr } = await req.supabase
-      .from("test_suites")
-      .select("calculator_code")
-      .eq("id", id)
-      .single();
-    if (sErr) throw sErr;
-    if (!suite) return res.status(404).json({ error: "Test suite not found" });
-
-    const code = suite.calculator_code || "";
-    if (code.trim()) {
-      const { data: maxRow } = await req.supabase
-        .from("code_versions")
-        .select("version_number")
-        .eq("test_suite_id", id)
-        .order("version_number", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const nextVersion = (maxRow?.version_number ?? 0) + 1;
-
-      const { error: vErr } = await req.supabase
-        .from("code_versions")
-        .insert({
-          test_suite_id: id,
-          calculator_code: code,
-          change_description: change_description || "Confirmed assumptions and saved",
-          version_number: nextVersion,
-          created_by: "ai",
-        });
-      if (vErr) throw vErr;
-    }
-
-    const updates = { updated_at: new Date().toISOString() };
-    if (assumptions != null) updates.assumptions = assumptions;
-
-    const { data, error } = await req.supabase
-      .from("test_suites")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
-    if (error) throw error;
-
-    res.json(data);
-  } catch (err) {
-    console.error("Test suite confirm error:", err);
     res.status(500).json({ error: err.message });
   }
 });

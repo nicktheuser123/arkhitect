@@ -15,6 +15,7 @@ import testRunsRouter from "./routes/testRuns.js";
 import aiRouter from "./routes/ai.js";
 import codeVersionsRouter from "./routes/codeVersions.js";
 import chatRouter from "./routes/chat.js";
+import recorderRouter from "./routes/recorder.js";
 
 const app = express();
 app.use(cors());
@@ -28,6 +29,7 @@ app.use("/api/test-runs", testRunsRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/test-suites", codeVersionsRouter);
 app.use("/api/chat", chatRouter);
+app.use("/api/recorder", recorderRouter);
 
 // Serve static frontend in production (when dist exists)
 const clientDist = path.join(__dirname, "..", "client", "dist");
@@ -38,6 +40,10 @@ if (existsSync(clientDist)) {
     res.sendFile(path.join(clientDist, "index.html"));
   });
 }
+
+process.on("unhandledRejection", (err) => {
+  console.error("Unhandled rejection (non-fatal):", err?.message || err);
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

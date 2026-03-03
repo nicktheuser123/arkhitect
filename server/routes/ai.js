@@ -2,7 +2,6 @@ import { Router } from "express";
 import {
   generateTestCode,
   editTestCode,
-  refineTestCode,
   askAboutTest,
 } from "../services/llm.js";
 
@@ -70,33 +69,9 @@ router.post("/edit", async (req, res) => {
       await saveSuiteCode(req.supabase, suiteId, result.code);
     }
 
-    res.json({ assumptions: result.assumptions || [] });
+    res.json({ changeDescription: result.changeDescription });
   } catch (err) {
     console.error("AI edit error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post("/refine", async (req, res) => {
-  try {
-    const { suiteId, corrections } = req.body;
-    if (!suiteId || !corrections || !corrections.length) {
-      return res.status(400).json({ error: "suiteId and corrections are required" });
-    }
-
-    const cfg = await loadLLMConfig(req.supabase);
-    if (!cfg) return res.status(400).json({ error: "LLM not configured. Set API Base, Key, and Model in Setup." });
-
-    const code = await loadSuiteCode(req.supabase, suiteId);
-    const result = await refineTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, corrections);
-
-    if (result.code) {
-      await saveSuiteCode(req.supabase, suiteId, result.code);
-    }
-
-    res.json({ assumptions: result.assumptions || [] });
-  } catch (err) {
-    console.error("AI refine error:", err);
     res.status(500).json({ error: err.message });
   }
 });

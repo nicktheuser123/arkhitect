@@ -34,20 +34,20 @@ export default function Auth() {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "center",
-      minHeight: "100vh", background: "#0e0e10",
+      minHeight: "100vh", background: "#0c0c0d",
     }}>
       <form onSubmit={handleSubmit} style={{
-        background: "#1a1a2e", borderRadius: 12, padding: 32,
+        background: "#18181b", borderRadius: 12, padding: 32,
         width: 360, display: "flex", flexDirection: "column", gap: 16,
-        border: "1px solid #2a2a3e",
+        border: "1px solid #27272a",
       }}>
-        <h2 style={{ margin: 0, color: "#e0e0e0", textAlign: "center" }}>
+        <h2 style={{ margin: 0, color: "#fafafa", textAlign: "center" }}>
           {isSignUp ? "Create Account" : "Sign In"}
         </h2>
 
         {error && (
           <div style={{
-            background: "#3a1a1a", color: "#ff6b6b", padding: "8px 12px",
+            background: "rgba(248, 81, 73, 0.1)", color: "#f85149", padding: "8px 12px",
             borderRadius: 6, fontSize: 13,
           }}>
             {error}
@@ -56,7 +56,7 @@ export default function Auth() {
 
         {confirmMsg && (
           <div style={{
-            background: "#1a3a2a", color: "#6bffb8", padding: "8px 12px",
+            background: "rgba(23, 177, 105, 0.1)", color: "#17b169", padding: "8px 12px",
             borderRadius: 6, fontSize: 13,
           }}>
             {confirmMsg}
@@ -70,8 +70,8 @@ export default function Auth() {
           onChange={(e) => setEmail(e.target.value)}
           required
           style={{
-            padding: "10px 12px", borderRadius: 6, border: "1px solid #333",
-            background: "#121220", color: "#e0e0e0", fontSize: 14,
+            padding: "10px 12px", borderRadius: 6, border: "1px solid #27272a",
+            background: "#0c0c0d", color: "#fafafa", fontSize: 14,
             outline: "none",
           }}
         />
@@ -84,8 +84,8 @@ export default function Auth() {
           required
           minLength={6}
           style={{
-            padding: "10px 12px", borderRadius: 6, border: "1px solid #333",
-            background: "#121220", color: "#e0e0e0", fontSize: 14,
+            padding: "10px 12px", borderRadius: 6, border: "1px solid #27272a",
+            background: "#0c0c0d", color: "#fafafa", fontSize: 14,
             outline: "none",
           }}
         />
@@ -95,20 +95,20 @@ export default function Auth() {
           disabled={loading}
           style={{
             padding: "10px 0", borderRadius: 6, border: "none",
-            background: loading ? "#444" : "#5b5fc7", color: "#fff",
+            background: loading ? "#3f3f46" : "#3aafa9", color: "#fff",
             fontSize: 14, fontWeight: 600, cursor: loading ? "wait" : "pointer",
           }}
         >
           {loading ? "..." : isSignUp ? "Sign Up" : "Sign In"}
         </button>
 
-        <p style={{ margin: 0, textAlign: "center", color: "#888", fontSize: 13 }}>
+        <p style={{ margin: 0, textAlign: "center", color: "#a1a1aa", fontSize: 13 }}>
           {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
           <button
             type="button"
             onClick={() => { setIsSignUp(!isSignUp); setError(null); setConfirmMsg(null); }}
             style={{
-              background: "none", border: "none", color: "#7b7fc7",
+              background: "none", border: "none", color: "#3aafa9",
               cursor: "pointer", fontSize: 13, textDecoration: "underline",
               padding: 0,
             }}

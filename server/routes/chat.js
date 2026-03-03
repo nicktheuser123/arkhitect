@@ -3,6 +3,7 @@ import {
   generateTestCode,
   editTestCode,
   askAboutTest,
+  generateCodeFromConversation,
 } from "../services/llm.js";
 
 const router = Router();
@@ -30,6 +31,14 @@ async function loadChatHistory(supabase, suiteId) {
   return (data || []).reverse();
 }
 
+function findMcpContextFromMessages(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const meta = messages[i].metadata;
+    if (meta && meta.mcpContext) return meta;
+  }
+  return null;
+}
+
 router.get("/:suiteId", async (req, res) => {
   try {
     const { suiteId } = req.params;
@@ -49,13 +58,13 @@ router.get("/:suiteId", async (req, res) => {
 router.post("/:suiteId/send", async (req, res) => {
   try {
     const { suiteId } = req.params;
-    const { mode, content, testContext, confirmedAssumptions = [] } = req.body;
+    const { mode, content, testContext } = req.body;
 
     if (!content || !mode) {
       return res.status(400).json({ error: "content and mode are required" });
     }
-    if (mode !== "edit" && mode !== "ask") {
-      return res.status(400).json({ error: "mode must be 'edit' or 'ask'" });
+    if (mode !== "edit" && mode !== "ask" && mode !== "create") {
+      return res.status(400).json({ error: "mode must be 'edit', 'ask', or 'create'" });
     }
 
     const cfg = await loadLLMConfig(req.supabase);
@@ -77,22 +86,67 @@ router.post("/:suiteId/send", async (req, res) => {
       : "";
 
     let assistantContent = "";
-    let assumptions = null;
     let hasCode = !!code.trim();
 
-    if (mode === "edit") {
+    if (mode === "create") {
+      const { data: allMsgs } = await req.supabase
+        .from("chat_messages")
+        .select("role, content, metadata")
+        .eq("test_suite_id", suiteId)
+        .order("created_at", { ascending: true });
+
+      const mcpMeta = findMcpContextFromMessages(allMsgs || []);
+      const mcpContext = mcpMeta?.mcpContext || {};
+      if (mcpMeta?.testCases) mcpContext.testCases = mcpMeta.testCases;
+
+      const conversationHistory = (allMsgs || []).map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      conversationHistory.push({ role: "user", content });
+
+      const result = await generateCodeFromConversation(
+        cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model,
+        conversationHistory, mcpContext
+      );
+
+      if (result.code) {
+        const { error: uErr } = await req.supabase
+          .from("test_suites")
+          .update({ calculator_code: result.code, updated_at: new Date().toISOString() })
+          .eq("id", suiteId);
+        if (uErr) throw uErr;
+        hasCode = true;
+
+        const { data: maxRow } = await req.supabase
+          .from("code_versions")
+          .select("version_number")
+          .eq("test_suite_id", suiteId)
+          .order("version_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        await req.supabase
+          .from("code_versions")
+          .insert({
+            test_suite_id: suiteId,
+            calculator_code: result.code,
+            change_description: result.changeDescription || "Generated from conversation",
+            version_number: (maxRow?.version_number ?? 0) + 1,
+            created_by: "ai",
+          });
+      }
+
+      assistantContent = result.changeDescription || "Test code has been generated from the discussed flow.";
+    } else if (mode === "edit") {
       let result;
       const instructionWithHistory = content + historyContext;
       if (code.trim()) {
-        result = await editTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, instructionWithHistory, confirmedAssumptions);
+        result = await editTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, instructionWithHistory);
       } else {
         result = await generateTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, instructionWithHistory);
       }
-      assumptions = result.assumptions || [];
       assistantContent = result.changeDescription || "I've updated the test code.";
-      if (assumptions.length > 0) {
-        assistantContent += " Please review the assumptions below.";
-      }
 
       if (result.code) {
         const codeChanged = result.code !== code;
@@ -144,9 +198,7 @@ router.post("/:suiteId/send", async (req, res) => {
         role: "assistant",
         content: assistantContent,
         mode,
-        metadata: mode === "edit" && assumptions && assumptions.length > 0
-          ? { changeDescription: assistantContent }
-          : null,
+        metadata: mode === "edit" ? { changeDescription: assistantContent } : null,
       });
     if (amErr) throw amErr;
 
@@ -159,7 +211,6 @@ router.post("/:suiteId/send", async (req, res) => {
 
     res.json({
       messages: allMessages || [],
-      assumptions: assumptions ?? undefined,
       hasCode,
     });
   } catch (err) {

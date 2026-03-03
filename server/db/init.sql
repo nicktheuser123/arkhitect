@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS test_suites (
   calculator_code TEXT DEFAULT '',
   logic_md TEXT DEFAULT '',
   assumptions JSONB,
+  bubble_app_url TEXT,
   run_order_tests BOOLEAN DEFAULT true,
   run_reporting_daily_tests BOOLEAN DEFAULT true,
   user_id UUID DEFAULT auth.uid() REFERENCES auth.users(id),

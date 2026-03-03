@@ -1,8 +1,10 @@
 import axios from "axios";
 
 export function createBubbleClient(baseURL, token) {
+  const rawBase = baseURL || process.env.BUBBLE_API_BASE;
+  const dataBase = rawBase.replace(/\/wf\/?$/, "/obj");
   const client = axios.create({
-    baseURL: baseURL || process.env.BUBBLE_API_BASE,
+    baseURL: dataBase,
     headers: {
       Authorization: `Bearer ${token || process.env.BUBBLE_API_TOKEN}`,
       "Content-Type": "application/json",

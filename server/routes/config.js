@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { listApps } from "../services/buildprint.js";
 
 const router = Router();
 
@@ -56,6 +57,20 @@ router.post("/batch", async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error("Config batch error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/buildprint-apps", async (req, res) => {
+  try {
+    const { mcpUrl } = req.query;
+    if (!mcpUrl) {
+      return res.status(400).json({ error: "mcpUrl query param is required" });
+    }
+    const apps = await listApps(mcpUrl);
+    res.json(apps);
+  } catch (err) {
+    console.error("Buildprint apps error:", err);
     res.status(500).json({ error: err.message });
   }
 });

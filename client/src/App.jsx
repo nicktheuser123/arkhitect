@@ -14,7 +14,7 @@ function AppContent() {
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        minHeight: "100vh", background: "#0e0e10", color: "#888",
+        minHeight: "100vh", background: "#0c0c0d", color: "#a1a1aa",
       }}>
         Loading...
       </div>
@@ -39,13 +39,13 @@ function AppContent() {
           Validator
         </button>
         <div style={{ flex: 1 }} />
-        <span style={{ color: "#888", fontSize: 12, marginRight: 8 }}>
+        <span style={{ color: "#a1a1aa", fontSize: 12, marginRight: 8 }}>
           {user.email}
         </span>
         <button
           onClick={signOut}
           style={{
-            background: "none", border: "1px solid #444", color: "#aaa",
+            background: "none", border: "1px solid #27272a", color: "#a1a1aa",
             borderRadius: 4, padding: "4px 10px", cursor: "pointer", fontSize: 12,
           }}
         >

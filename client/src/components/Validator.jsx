@@ -3,10 +3,9 @@ import {
   getTestSuites,
   getTestSuite,
   editCode,
-  refineCode,
-  confirmTestSuite,
 } from "../api";
 import ValidatorHeader from "./Validator/ValidatorHeader";
+import RecordFlow from "./Validator/RecordFlow";
 import ChatPanel from "./Validator/ChatPanel";
 import TestRunner from "./Validator/TestRunner";
 import VersionHistory from "./Validator/VersionHistory";
@@ -23,10 +22,8 @@ export default function Validator() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [assumptions, setAssumptions] = useState([]);
-  const [confirmedSet, setConfirmedSet] = useState(new Set());
+  const [chatMessages, setChatMessages] = useState([]);
   const [generating, setGenerating] = useState(false);
-  const [refining, setRefining] = useState(false);
 
   const [showVersions, setShowVersions] = useState(false);
   const [versionKey, setVersionKey] = useState(0);
@@ -44,8 +41,7 @@ export default function Validator() {
     if (!selectedSuite) {
       setSuite(null);
       setHasCode(false);
-      setAssumptions([]);
-      setConfirmedSet(new Set());
+      setChatMessages([]);
       return;
     }
     setLoading(true);
@@ -53,70 +49,31 @@ export default function Validator() {
       .then((s) => {
         setSuite(s);
         setHasCode(!!(s.calculator_code && s.calculator_code.trim()));
-        setAssumptions([]);
-        setConfirmedSet(new Set());
+        setChatMessages([]);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [selectedSuite]);
 
+  const handleAnalyzed = useCallback((messages) => {
+    setChatMessages(messages);
+    setHasCode(false);
+  }, []);
+
   const handleChatResult = useCallback((result) => {
     if (result.hasCode != null) setHasCode(result.hasCode);
-    setAssumptions(result.assumptions || []);
-    setConfirmedSet(new Set());
+    if (result.messages) setChatMessages(result.messages);
   }, []);
 
   const handleDisplayRunChange = useCallback((run) => {
     setDisplayRun(run);
   }, []);
 
-  const handleConfirmAssumption = useCallback((id) => {
-    setConfirmedSet((prev) => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleCorrection = useCallback(async (assumptionId, correctionText) => {
-    setError("");
-    setRefining(true);
-    try {
-      const result = await refineCode(selectedSuite, [
-        { assumptionId, correction: correctionText },
-      ]);
-      setAssumptions(result.assumptions || []);
-      setConfirmedSet(new Set());
-      setHasCode(true);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setRefining(false);
-    }
-  }, [selectedSuite]);
-
-  const handleConfirmAll = useCallback(async () => {
-    if (!selectedSuite) return;
-    setError("");
-    try {
-      const updated = await confirmTestSuite(selectedSuite, assumptions);
-      setSuite(updated);
-      setHasCode(!!(updated.calculator_code && updated.calculator_code.trim()));
-      setAssumptions([]);
-      setConfirmedSet(new Set());
-      setVersionKey((k) => k + 1);
-    } catch (e) {
-      setError(e.message);
-    }
-  }, [selectedSuite, assumptions]);
-
   const handleTraceFeedback = useCallback(async (feedbackText) => {
     setError("");
     setGenerating(true);
     try {
-      const result = await editCode(selectedSuite, feedbackText);
-      setAssumptions(result.assumptions || []);
-      setConfirmedSet(new Set());
+      await editCode(selectedSuite, feedbackText);
       setHasCode(true);
     } catch (e) {
       setError(e.message);
@@ -128,8 +85,6 @@ export default function Validator() {
   const handleVersionRestore = useCallback((restoredSuite) => {
     setSuite(restoredSuite);
     setHasCode(!!(restoredSuite.calculator_code && restoredSuite.calculator_code.trim()));
-    setAssumptions(restoredSuite.assumptions || []);
-    setConfirmedSet(new Set());
     setVersionKey((k) => k + 1);
   }, []);
 
@@ -159,19 +114,20 @@ export default function Validator() {
     return (
       <>
         <div className="validator-panel" style={{ display: "flex", flexDirection: "column", gap: "0.75rem", minHeight: 0, flex: 1, overflow: "hidden" }}>
+          <RecordFlow
+            suiteId={selectedSuite}
+            bubbleAppUrl={suite?.bubble_app_url}
+            onAnalyzed={handleAnalyzed}
+            onError={setError}
+          />
           <ChatPanel
             suiteId={selectedSuite}
             hasCode={hasCode}
             testContext={testContext}
+            messages={chatMessages}
+            setMessages={setChatMessages}
             onResult={handleChatResult}
             onError={setError}
-            assumptions={assumptions}
-            confirmedSet={confirmedSet}
-            confirmedAssumptions={suite?.assumptions || []}
-            onConfirm={handleConfirmAssumption}
-            onCorrection={handleCorrection}
-            onConfirmAll={handleConfirmAll}
-            refining={refining}
           />
 
           <div style={{ flexShrink: 0 }}>

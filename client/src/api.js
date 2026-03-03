@@ -36,6 +36,10 @@ export async function saveConfig(config) {
   });
 }
 
+export async function listBuildprintApps(mcpUrl) {
+  return authFetch(`${API}/config/buildprint-apps?mcpUrl=${encodeURIComponent(mcpUrl)}`);
+}
+
 export async function getTestSuites() {
   return authFetch(`${API}/test-suites`);
 }
@@ -97,22 +101,6 @@ export async function editCode(suiteId, instruction) {
   });
 }
 
-export async function refineCode(suiteId, corrections) {
-  return authFetch(`${API}/ai/refine`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ suiteId, corrections }),
-  });
-}
-
-export async function confirmTestSuite(suiteId, assumptions) {
-  return authFetch(`${API}/test-suites/${suiteId}/confirm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ assumptions, change_description: "Confirmed assumptions and saved" }),
-  });
-}
-
 export async function getCodeVersions(suiteId) {
   return authFetch(`${API}/test-suites/${suiteId}/versions`);
 }
@@ -127,10 +115,38 @@ export async function getChatMessages(suiteId) {
   return authFetch(`${API}/chat/${suiteId}`);
 }
 
-export async function sendChatMessage(suiteId, { mode, content, testContext, confirmedAssumptions }) {
+export async function sendChatMessage(suiteId, { mode, content, testContext }) {
   return authFetch(`${API}/chat/${suiteId}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode, content, testContext, confirmedAssumptions }),
+    body: JSON.stringify({ mode, content, testContext }),
+  });
+}
+
+export async function startRecording(suiteId) {
+  return authFetch(`${API}/recorder/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ suiteId }),
+  });
+}
+
+export async function subscribeRecordingEvents(sessionId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || "";
+  return new EventSource(`${API}/recorder/${sessionId}/events?token=${encodeURIComponent(token)}`);
+}
+
+export async function stopRecordingSession(sessionId) {
+  return authFetch(`${API}/recorder/${sessionId}/stop`, {
+    method: "POST",
+  });
+}
+
+export async function analyzeRecording(sessionId, suiteId) {
+  return authFetch(`${API}/recorder/${sessionId}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ suiteId }),
   });
 }

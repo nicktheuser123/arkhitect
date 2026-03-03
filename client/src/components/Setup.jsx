@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getConfig, saveConfig } from "../api";
+import { getConfig, saveConfig, listBuildprintApps } from "../api";
 
 export default function Setup() {
   const [config, setConfig] = useState({
@@ -8,18 +8,49 @@ export default function Setup() {
     llm_api_base: "",
     llm_api_key: "",
     llm_model: "",
+    buildprint_mcp_url: "",
+    buildprint_app_id: "",
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [bpApps, setBpApps] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(false);
 
   useEffect(() => {
     getConfig()
-      .then(setConfig)
+      .then((serverConfig) => setConfig((prev) => ({ ...prev, ...serverConfig })))
       .catch((e) => setMessage(e.message));
   }, []);
 
+  useEffect(() => {
+    if (config.buildprint_mcp_url) {
+      fetchBpApps(config.buildprint_mcp_url);
+    } else {
+      setBpApps([]);
+    }
+  }, [config.buildprint_mcp_url]);
+
+  const fetchBpApps = async (mcpUrl) => {
+    if (!mcpUrl) return;
+    setLoadingApps(true);
+    try {
+      const apps = await listBuildprintApps(mcpUrl);
+      setBpApps(apps || []);
+    } catch {
+      setBpApps([]);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
   const handleChange = (key, value) => {
     setConfig((c) => ({ ...c, [key]: value }));
+  };
+
+  const handleMcpUrlBlur = () => {
+    if (config.buildprint_mcp_url) {
+      fetchBpApps(config.buildprint_mcp_url);
+    }
   };
 
   const handleSave = async () => {
@@ -95,8 +126,55 @@ export default function Setup() {
         />
       </div>
 
+      <h3 style={{ marginTop: "2rem", marginBottom: "1rem", fontSize: "1rem", fontWeight: 500, color: "var(--text-muted)" }}>
+        Buildprint MCP (for App Context)
+      </h3>
+
+      <div className="form-group">
+        <label>Buildprint MCP URL</label>
+        <input
+          type="url"
+          placeholder="https://mcp.buildprint.ai/bp_..."
+          value={config.buildprint_mcp_url || ""}
+          onChange={(e) => handleChange("buildprint_mcp_url", e.target.value)}
+          onBlur={handleMcpUrlBlur}
+        />
+        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+          The MCP server URL with your access token
+        </span>
+      </div>
+
+      <div className="form-group">
+        <label>Buildprint App</label>
+        {bpApps.length > 0 ? (
+          <select
+            value={config.buildprint_app_id || ""}
+            onChange={(e) => handleChange("buildprint_app_id", e.target.value)}
+            style={{ width: "100%" }}
+          >
+            <option value="">Select an app...</option>
+            {bpApps.map((app) => (
+              <option key={app.appId} value={app.appId}>
+                {app.name} ({app.appId})
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            placeholder={loadingApps ? "Loading apps..." : "Enter MCP URL first, or type app ID"}
+            value={config.buildprint_app_id || ""}
+            onChange={(e) => handleChange("buildprint_app_id", e.target.value)}
+            disabled={loadingApps}
+          />
+        )}
+        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+          {loadingApps ? "Fetching available apps..." : "The Bubble app to analyze"}
+        </span>
+      </div>
+
       <button className="btn" onClick={handleSave} disabled={saving}>
-        {saving ? "Saving…" : "Save"}
+        {saving ? "Saving..." : "Save"}
       </button>
 
       {message && (

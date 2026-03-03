@@ -24,12 +24,10 @@ Example test (order validation, abbreviated):
     grossAmount += (addOn.Price || 0) * (addOn.Quantity || 0);
   });
   console.log("__TRACE__" + JSON.stringify({ step: 3, title: "Calculated Ticket Count", type: "calculation", formula: "Sum of Quantity where Type = Ticket", value: ticketCount, data: { ticketAddOnCount: addOns.filter(a => a["OS AddOnType"] === "Ticket").length } }));
-  console.log("__TRACE__" + JSON.stringify({ step: 4, title: "Calculated Gross Amount", type: "calculation", formula: "Sum of (Price × Quantity) for tickets", value: grossAmount.toFixed(2), data: { ticketCount, pricePerTicket: addOns.find(a => a["OS AddOnType"] === "Ticket")?.Price } }));
   const results = [
     { label: "Ticket Count", expected: ticketCount, received: order["Ticket Count"], pass: ticketCount === order["Ticket Count"] },
     { label: "Gross Amount", expected: grossAmount.toFixed(2), received: Number(order["Gross Amount"]).toFixed(2), pass: Math.abs(grossAmount - order["Gross Amount"]) < 0.01 },
   ];
-  console.log("__TRACE__" + JSON.stringify({ step: 5, title: "Assertions", type: "assertion", comparison: "Expected vs Bubble GP_Order fields", data: results }));
   const passed = results.filter(r => r.pass).length;
   const failed = results.filter(r => !r.pass).length;
   console.log("__ARKHITECT_RESULT__" + JSON.stringify({ results, passed, failed }));
@@ -67,22 +65,53 @@ ASSERTION:
   - DO NOT use "matchingAgainst" — always use "comparison"
 `;
 
-const ASSUMPTIONS_INSTRUCTIONS = `
-IMPORTANT — Assumptions:
-In addition to code, you MUST return an "assumptions" array listing every assumption you made.
-Each assumption is an object with:
-- "id": short unique string like "ds1", "calc1", "assert1"
-- "category": one of "data_source", "calculation", "assertion"
-- "description": plain-English description a non-coder can understand
-- "confidence": "high" (very likely correct), "medium" (probably correct), or "low" (guessing)
-- "editHint": (optional) a question to ask the user if confidence is not "high", e.g. "What is the processing fee percentage?"
+const BUBBLE_JSON_KNOWLEDGE = `
+## Bubble App JSON Structure (for interpreting MCP results)
 
-Examples of good assumptions:
-  { "id": "ds1", "category": "data_source", "description": "Order data comes from entity type 'GP_Order'", "confidence": "high" }
-  { "id": "calc1", "category": "calculation", "description": "Ticket Count = sum of Quantity on Add Ons where AddOnType is 'Ticket'", "confidence": "medium", "editHint": "How is ticket count calculated?" }
-  { "id": "calc2", "category": "calculation", "description": "Processing Fee = Gross Amount × 3.5%", "confidence": "low", "editHint": "What is the processing fee percentage or formula?" }
-  { "id": "assert1", "category": "assertion", "description": "Gross Amount compared with $0.01 tolerance", "confidence": "high" }
+### Workflows
+- Page workflows live at /pages/<pageId>/workflows.
+- Reusable workflows live at /element_definitions/<reusableId>/workflows.
+- Backend workflows live at /api.
+- Each workflow has: id, type (e.g. PageLoaded, ButtonClicked, APIEvent, CustomEvent), name, properties (trigger config, conditions), actions (map keyed by action id).
+- Workflow conditions are expressions under properties.condition.
+- Custom events use CustomEvent type, referenced by ScheduleCustom or TriggerCustomEvent actions.
+
+### Actions
+- Actions live under workflows.<workflowId>.actions as a map keyed by action id.
+- Each action: id, type (e.g. ChangeThing, SetCustomState, ScheduleAPIEvent, ScheduleAPIEventOnList), properties (config + argument expressions).
+- ChangeThing actions have properties.changes map with field update expressions — these hold calculation formulas.
+- ScheduleAPIEvent actions reference backend workflows via properties.api_event.
+- Action order is by map key order (0, 1, 2...).
+
+### Expressions
+- JSON nodes with type and properties, chained via next field.
+- Chain direction: datasource root (GetElement, CurrentUser, Search) -> Message nodes via next.
+- Message nodes have a name describing an operation (equals, is_not_empty, get_group_data, etc.).
+- Common types: GetElement (resolve element by element_id), CurrentUser, PageData, ArbitraryText (constant), OptionValue/OneOptionValue/AllOptionValue.
+- Expression nodes appear in workflow conditions, action arguments, element properties.
+
+### Data Types (user_types)
+- Map keyed by type id. Each type has name/display, fields map.
+- Field types: text, number, date, user, custom.<type>, list.text, list.custom.<type>.
+
+### Option Sets
+- Map keyed by option set id. Each has name/display, values map.
+- Values have display, db_value, sort_factor.
+- Referenced in expressions with option.<set_id> and option_value.
 `;
+
+const JQ_COOKBOOK_REFERENCE = `
+## Available jq Search Templates
+You can request these by template name. The server will execute them.
+- "by_action" — find all uses of an action type. Args: { strings: { t: "ScheduleAPIEvent" } }
+- "by_element_workflows" — find workflows triggered by or using a specific element. Args: { strings: { id: "<element_id>" } }
+- "workflow_triggers" — find triggers for a workflow id or name. Args: { strings: { query: "<workflow_id_or_name>" } }
+- "workflow_owner" — given workflow IDs, find page/reusable owner. Args: { json: { workflow_ids: ["id1","id2"] } }
+- "by_event_type" — find workflows by event type. Args: { strings: { t: "PageLoaded" } }
+- "by_element_usage" — find all references to an element id. Args: { strings: { id: "<element_id>" } }
+`;
+
+// ---------- LLM prompts ----------
 
 const GENERATE_SYSTEM_PROMPT = `You are a test code generator for Arkhitect, a Bubble.io validation platform.
 You write JavaScript test code that fetches data from a Bubble.io app, computes expected values, and compares them against actual Bubble field values.
@@ -100,12 +129,9 @@ Rules:
 - Use tolerance-based comparison for numbers: Math.abs(a - b) < 0.01.
 - Include __TRACE__ logging between every step as described above.
 
-${ASSUMPTIONS_INSTRUCTIONS}
-
 Respond with a JSON object (no markdown fences):
 {
-  "code": "...the full test code with __TRACE__ logging...",
-  "assumptions": [ ...array of assumption objects... ]
+  "code": "...the full test code with __TRACE__ logging..."
 }`;
 
 const EDIT_SYSTEM_PROMPT = `You are a test code editor for Arkhitect, a Bubble.io validation platform.
@@ -121,36 +147,133 @@ Rules:
 - Keep __TRACE__ logging between every step. Update trace entries to reflect changes.
 - Handle edge cases introduced by the change.
 
-${ASSUMPTIONS_INSTRUCTIONS}
-
 Respond with a JSON object (no markdown fences):
 {
   "code": "...the complete modified test code...",
-  "assumptions": [ ...updated array of assumption objects... ],
   "changeDescription": "...a concise list of what was changed..."
 }`;
 
-const REFINE_SYSTEM_PROMPT = `You are a test code editor for Arkhitect, a Bubble.io validation platform.
-The user has reviewed the assumptions made by the AI and provided corrections.
-You must update the test code to reflect the corrected assumptions.
+const ASK_SYSTEM_PROMPT = `You are a helpful assistant for Arkhitect, a Bubble.io validation platform.
+The user has test code that fetches data from Bubble, computes expected values, and compares them to actual values.
+You answer questions about the test code, how values are calculated, why assertions might fail, or any related topic.
+Do NOT modify code. Provide clear, plain-English explanations.`;
 
-${BUBBLE_HELPERS_DOCS}
-${TRACE_INSTRUCTIONS}
+const PHASE2_LOCATE_PROMPT = `You are an expert at analyzing Bubble.io applications. You are given:
+1. A Playwright recording of user interactions in a Bubble app.
+2. An app summary listing all pages, data types, option sets, and reusable elements.
+3. Buildprint guidelines on how Bubble app JSON is structured.
 
-Rules:
-- Return the COMPLETE modified test code (not a diff/patch).
-- Apply each correction precisely — the user is telling you what was WRONG in the previous version.
-- Keep the __ARKHITECT_RESULT__ output format.
-- Keep __TRACE__ logging between every step. Update trace entries to reflect changes.
-- Handle edge cases introduced by corrections.
+${BUBBLE_JSON_KNOWLEDGE}
+${JQ_COOKBOOK_REFERENCE}
 
-${ASSUMPTIONS_INSTRUCTIONS}
+Your task: Analyze the Playwright recording to identify which parts of the Bubble app were exercised, then tell the server what MCP data to fetch.
 
 Respond with a JSON object (no markdown fences):
 {
-  "code": "...the complete corrected test code...",
-  "assumptions": [ ...updated array of assumption objects reflecting corrections... ]
+  "description": "Brief description of what the user did in the recording",
+  "pages": ["page_name_1", "page_name_2"],
+  "dataTypes": ["DataType1", "DataType2"],
+  "textSearches": ["keyword1", "keyword2"],
+  "jqSearches": [
+    { "template": "by_action", "args": { "strings": { "t": "ScheduleAPIEvent" } } }
+  ]
+}
+
+Rules:
+- pages: list the page names the user visited (from the URLs in the Playwright code).
+- dataTypes: list the Bubble data type names that are likely read or written during this flow.
+- textSearches: keywords to search for in the app JSON (field names, labels, flow-related terms).
+- jqSearches: structured searches using the cookbook templates listed above. Include searches that help identify which workflows fire and what data types are involved.
+- Be specific: if the user interacted with an order page, search for order-related terms.
+- Include at least one by_action search for ScheduleAPIEvent to find backend workflow triggers.`;
+
+const PHASE3_DEEPREAD_PROMPT = `You are an expert at analyzing Bubble.io application logic. You are given:
+1. The Playwright recording of user interactions.
+2. Results from Phase 2 MCP exploration: page element trees (with workflow cross-references), data type schemas, and search results.
+
+${BUBBLE_JSON_KNOWLEDGE}
+
+Your task: Review the page trees and search results to identify which specific workflows and expressions contain the calculation logic you need to understand. Tell the server exactly what to deep-read.
+
+Respond with a JSON object (no markdown fences):
+{
+  "workflowPaths": ["/api/workflow_id_1", "/pages/page_id/workflows/workflow_id_2"],
+  "optionSetPaths": ["/option_sets/os_name"],
+  "additionalSearches": ["keyword_for_missed_logic"],
+  "jqSearches": [
+    { "template": "workflow_triggers", "args": { "strings": { "query": "workflow_name" } } }
+  ],
+  "deepReadDepth": 15
+}
+
+Rules:
+- workflowPaths: JSON pointer paths to workflows that contain business logic (calculations, data mutations). Look at the workflow cross-references in the page trees to find relevant workflow IDs.
+- optionSetPaths: paths to option sets used in conditions or logic branching.
+- additionalSearches: text searches for terms you haven't found yet (e.g. "discount", "processing fee").
+- jqSearches: additional cookbook searches to trace workflow chains.
+- deepReadDepth: recommended depth for get_json (10-20, higher for complex nested logic).
+- Focus on workflows that contain ChangeThing actions with calculation expressions.`;
+
+const PHASE4_GENERATE_PROMPT = `You are an expert at analyzing Bubble.io business logic and generating test specifications. You are given:
+1. The Playwright recording of user interactions.
+2. ALL MCP context from the Bubble app: guidelines, summary, page trees, data type schemas, workflow definitions, option sets, and search results.
+
+${BUBBLE_JSON_KNOWLEDGE}
+
+Your task: Synthesize all the context to produce:
+1. A clear description of the business logic flow the user exercised.
+2. Individual test cases for each verifiable field/calculation.
+3. A formatted chat message for the user.
+
+Respond with a JSON object (no markdown fences):
+{
+  "flowDescription": "User created an order with 3 ticket add-ons...",
+  "businessLogic": [
+    { "step": 1, "description": "Order Item subtotal = Price x Quantity (from workflow calculate_order_totals action 0)" }
+  ],
+  "testCases": [
+    { "id": "tc1", "field": "Ticket Count", "entity": "GP_Order", "logic": "Sum of Quantity on Add Ons where Type = Ticket", "priority": "high" }
+  ],
+  "questions": ["Is the processing fee percentage 3.5% or configured per event?"],
+  "chatMessage": "formatted message for the user summarizing the flow, business logic steps, test cases, and any questions"
+}
+
+Rules:
+- Extract EXACT formulas from workflow expressions (ChangeThing action properties.changes).
+- Each testCase should target a single verifiable field on a specific entity.
+- The chatMessage should be conversational and easy to understand — include the flow description, each business logic step, each test case with its logic, and any open questions.
+- priority: "high" for core calculations, "medium" for secondary fields, "low" for cosmetic/derived.
+- questions: list anything you're uncertain about that the user could clarify.`;
+
+const GENERATE_CODE_FROM_CONVERSATION_PROMPT = `You are a test code generator for Arkhitect, a Bubble.io validation platform.
+You are given:
+1. A full conversation between the user and AI about a business logic flow and test cases.
+2. Bubble app context from MCP (data types, workflows, expressions, option sets).
+
+Your task: Generate JavaScript test code that implements the agreed-upon test cases from the conversation.
+
+${BUBBLE_HELPERS_DOCS}
+${TRACE_INSTRUCTIONS}
+${EXAMPLE_SNIPPET}
+
+Rules:
+- Write ONLY the test body (no function wrapper, no imports — helpers are pre-injected).
+- Use async/await freely (code runs inside an async IIFE).
+- Always end with the __ARKHITECT_RESULT__ output.
+- Handle null/undefined fields gracefully with defaults.
+- Use helper: const money = (n) => Number(n || 0).toFixed(2); for monetary comparisons.
+- Use tolerance-based comparison for numbers: Math.abs(a - b) < 0.01.
+- Include __TRACE__ logging between every step as described above.
+- Implement ALL test cases discussed in the conversation.
+- Use the exact field names and data types from the MCP context.
+
+Respond with a JSON object (no markdown fences):
+{
+  "code": "...the full test code with __TRACE__ logging...",
+  "changeDescription": "Generated test code from conversation: [brief summary of what's tested]"
 }`;
+
+// ---------- helpers ----------
 
 async function chat(baseURL, apiKey, model, messages, jsonMode = false) {
   const url = baseURL.replace(/\/+$/, "") + "/chat/completions";
@@ -168,19 +291,39 @@ async function chat(baseURL, apiKey, model, messages, jsonMode = false) {
     Authorization: `Bearer ${apiKey}`,
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
+  const MAX_RETRIES = 5;
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`LLM API error ${res.status}: ${text}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      const retryAfterHeader = res.headers.get("retry-after");
+      let waitMs;
+      if (retryAfterHeader) {
+        waitMs = (parseFloat(retryAfterHeader) || 30) * 1000;
+      } else {
+        const text = await res.text();
+        const match = text.match(/try again in ([\d.]+)s/i);
+        waitMs = match ? parseFloat(match[1]) * 1000 + 1000 : (2 ** attempt) * 5000;
+      }
+      waitMs = Math.min(waitMs, 120_000);
+      console.log(`LLM rate-limited (429). Retrying in ${(waitMs / 1000).toFixed(1)}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`LLM API error ${res.status}: ${text}`);
+    }
+
+    const data = await res.json();
+    return data.choices[0].message.content;
   }
-
-  const data = await res.json();
-  return data.choices[0].message.content;
 }
 
 function parseJSON(raw) {
@@ -191,6 +334,8 @@ function parseJSON(raw) {
   return JSON.parse(cleaned);
 }
 
+// ---------- existing functions (assumptions removed) ----------
+
 export async function generateTestCode(baseURL, apiKey, model, description) {
   const raw = await chat(baseURL, apiKey, model, [
     { role: "system", content: GENERATE_SYSTEM_PROMPT },
@@ -199,17 +344,8 @@ export async function generateTestCode(baseURL, apiKey, model, description) {
   return parseJSON(raw);
 }
 
-export async function editTestCode(baseURL, apiKey, model, existingCode, instruction, confirmedAssumptions = []) {
-  let userContent = `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nInstruction: ${instruction}`;
-
-  if (confirmedAssumptions && confirmedAssumptions.length > 0) {
-    const descriptions = confirmedAssumptions
-      .map((a) => (typeof a === "object" && a.description ? a.description : String(a)))
-      .filter(Boolean);
-    if (descriptions.length > 0) {
-      userContent += `\n\nIMPORTANT: The user has already confirmed these assumptions. Do NOT include them in your "assumptions" array. Only return assumptions that are NEW or that have changed from the previous version:\n${descriptions.map((d) => `- ${d}`).join("\n")}`;
-    }
-  }
+export async function editTestCode(baseURL, apiKey, model, existingCode, instruction) {
+  const userContent = `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nInstruction: ${instruction}`;
 
   const raw = await chat(baseURL, apiKey, model, [
     { role: "system", content: EDIT_SYSTEM_PROMPT },
@@ -217,23 +353,6 @@ export async function editTestCode(baseURL, apiKey, model, existingCode, instruc
   ], true);
   return parseJSON(raw);
 }
-
-export async function refineTestCode(baseURL, apiKey, model, existingCode, corrections) {
-  const correctionText = corrections
-    .map(c => `- Assumption "${c.assumptionId}": ${c.correction}`)
-    .join("\n");
-
-  const raw = await chat(baseURL, apiKey, model, [
-    { role: "system", content: REFINE_SYSTEM_PROMPT },
-    { role: "user", content: `Current test code:\n\`\`\`javascript\n${existingCode}\n\`\`\`\n\nCorrections to apply:\n${correctionText}` },
-  ], true);
-  return parseJSON(raw);
-}
-
-const ASK_SYSTEM_PROMPT = `You are a helpful assistant for Arkhitect, a Bubble.io validation platform.
-The user has test code that fetches data from Bubble, computes expected values, and compares them to actual values.
-You answer questions about the test code, how values are calculated, why assertions might fail, or any related topic.
-Do NOT modify code. Provide clear, plain-English explanations.`;
 
 export async function askAboutTest(baseURL, apiKey, model, code, question, testContext = {}) {
   let contextBlock = `Current test code:\n\`\`\`javascript\n${code || "// No code yet"}\n\`\`\`\n\n`;
@@ -253,4 +372,119 @@ export async function askAboutTest(baseURL, apiKey, model, code, question, testC
     { role: "user", content: userContent },
   ], false);
   return { answer };
+}
+
+// ---------- 4-phase pipeline functions ----------
+
+export async function locateEntryPoints(baseURL, apiKey, model, playwrightCode, summary, guidelines) {
+  let userContent = `## Recorded User Flow (Playwright codegen output)\n\n\`\`\`javascript\n${playwrightCode}\n\`\`\`\n\n`;
+
+  if (guidelines) {
+    userContent += `## Buildprint Guidelines\n\n${guidelines}\n\n`;
+  }
+  if (summary) {
+    const summaryStr = typeof summary === "string" ? summary : JSON.stringify(summary, null, 2);
+    userContent += `## App Summary (data types, pages, option sets)\n\n\`\`\`json\n${summaryStr}\n\`\`\`\n\n`;
+  }
+
+  userContent += `Analyze the recording and identify which pages, data types, and workflows are relevant. Return the structured response.`;
+
+  const raw = await chat(baseURL, apiKey, model, [
+    { role: "system", content: PHASE2_LOCATE_PROMPT },
+    { role: "user", content: userContent },
+  ], true);
+  return parseJSON(raw);
+}
+
+export async function identifyDeepReads(baseURL, apiKey, model, playwrightCode, phase2McpResults) {
+  let userContent = `## Recorded User Flow\n\n\`\`\`javascript\n${playwrightCode}\n\`\`\`\n\n`;
+  userContent += `## Phase 2 MCP Results\n\n`;
+
+  if (phase2McpResults.trees) {
+    userContent += `### Page Element Trees (with workflow cross-references)\n\n\`\`\`\n${phase2McpResults.trees}\n\`\`\`\n\n`;
+  }
+  if (phase2McpResults.dataTypeSchemas) {
+    userContent += `### Data Type Schemas\n\n\`\`\`json\n${JSON.stringify(phase2McpResults.dataTypeSchemas, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (phase2McpResults.searchResults) {
+    userContent += `### Search Results\n\n\`\`\`json\n${JSON.stringify(phase2McpResults.searchResults, null, 2)}\n\`\`\`\n\n`;
+  }
+
+  userContent += `Review the trees and search results. Identify which specific workflows and expressions to deep-read for calculation logic.`;
+
+  const raw = await chat(baseURL, apiKey, model, [
+    { role: "system", content: PHASE3_DEEPREAD_PROMPT },
+    { role: "user", content: userContent },
+  ], true);
+  return parseJSON(raw);
+}
+
+export async function generateFlowAndTests(baseURL, apiKey, model, playwrightCode, allMcpContext) {
+  let userContent = `## Recorded User Flow\n\n\`\`\`javascript\n${playwrightCode}\n\`\`\`\n\n`;
+  userContent += `## Complete Bubble App Context\n\n`;
+
+  if (allMcpContext.guidelines) {
+    userContent += `### Guidelines\n\n${allMcpContext.guidelines}\n\n`;
+  }
+  if (allMcpContext.summary) {
+    const summaryStr = typeof allMcpContext.summary === "string" ? allMcpContext.summary : JSON.stringify(allMcpContext.summary, null, 2);
+    userContent += `### App Summary\n\n\`\`\`json\n${summaryStr}\n\`\`\`\n\n`;
+  }
+  if (allMcpContext.trees) {
+    userContent += `### Page Element Trees\n\n\`\`\`\n${allMcpContext.trees}\n\`\`\`\n\n`;
+  }
+  if (allMcpContext.dataTypeSchemas) {
+    userContent += `### Data Type Schemas\n\n\`\`\`json\n${JSON.stringify(allMcpContext.dataTypeSchemas, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (allMcpContext.workflows) {
+    userContent += `### Workflow Definitions\n\n\`\`\`json\n${JSON.stringify(allMcpContext.workflows, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (allMcpContext.optionSets) {
+    userContent += `### Option Sets\n\n\`\`\`json\n${JSON.stringify(allMcpContext.optionSets, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (allMcpContext.searchResults) {
+    userContent += `### Search Results\n\n\`\`\`json\n${JSON.stringify(allMcpContext.searchResults, null, 2)}\n\`\`\`\n\n`;
+  }
+
+  userContent += `Synthesize all context to produce the business logic flow, test cases, and a chat message for the user.`;
+
+  const raw = await chat(baseURL, apiKey, model, [
+    { role: "system", content: PHASE4_GENERATE_PROMPT },
+    { role: "user", content: userContent },
+  ], true);
+  return parseJSON(raw);
+}
+
+export async function generateCodeFromConversation(baseURL, apiKey, model, conversationHistory, mcpContext) {
+  let userContent = `## Conversation History\n\n`;
+  for (const msg of conversationHistory) {
+    userContent += `**${msg.role}**: ${msg.content}\n\n`;
+  }
+
+  userContent += `## Bubble App Context (from MCP)\n\n`;
+
+  if (mcpContext.summary) {
+    const summaryStr = typeof mcpContext.summary === "string" ? mcpContext.summary : JSON.stringify(mcpContext.summary, null, 2);
+    userContent += `### App Summary\n\n\`\`\`json\n${summaryStr}\n\`\`\`\n\n`;
+  }
+  if (mcpContext.dataTypeSchemas) {
+    userContent += `### Data Type Schemas\n\n\`\`\`json\n${JSON.stringify(mcpContext.dataTypeSchemas, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (mcpContext.workflows) {
+    userContent += `### Workflow Definitions\n\n\`\`\`json\n${JSON.stringify(mcpContext.workflows, null, 2)}\n\`\`\`\n\n`;
+  }
+  if (mcpContext.trees) {
+    userContent += `### Page Element Trees\n\n\`\`\`\n${mcpContext.trees}\n\`\`\`\n\n`;
+  }
+  if (mcpContext.testCases) {
+    userContent += `### Agreed Test Cases\n\n\`\`\`json\n${JSON.stringify(mcpContext.testCases, null, 2)}\n\`\`\`\n\n`;
+  }
+
+  userContent += `Generate the test code implementing all agreed test cases from the conversation.`;
+
+  const raw = await chat(baseURL, apiKey, model, [
+    { role: "system", content: GENERATE_CODE_FROM_CONVERSATION_PROMPT },
+    { role: "user", content: userContent },
+  ], true);
+  return parseJSON(raw);
 }

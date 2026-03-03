@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { getChatMessages, sendChatMessage } from "../../api";
-import AssumptionChecklist from "./AssumptionChecklist";
 
 function formatTime(dateStr) {
   const d = new Date(dateStr);
@@ -11,17 +10,11 @@ export default function ChatPanel({
   suiteId,
   hasCode,
   testContext,
+  messages,
+  setMessages,
   onResult,
   onError,
-  assumptions = [],
-  confirmedSet = new Set(),
-  confirmedAssumptions = [],
-  onConfirm,
-  onCorrection,
-  onConfirmAll,
-  refining = false,
 }) {
-  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("edit");
   const [sending, setSending] = useState(false);
@@ -43,9 +36,14 @@ export default function ChatPanel({
     }
   }, [messages]);
 
+  const hasMcpContext = messages.some((m) => m.metadata?.mcpContext);
+  const inConversation = !hasCode && messages.length > 0;
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending || !suiteId) return;
+
+    const sendMode = inConversation ? "ask" : mode;
 
     setSending(true);
     setInput("");
@@ -53,17 +51,38 @@ export default function ChatPanel({
 
     try {
       const result = await sendChatMessage(suiteId, {
-        mode,
+        mode: sendMode,
         content: text,
         testContext: testContext || {},
-        confirmedAssumptions: confirmedAssumptions || [],
       });
 
       setMessages(result.messages || []);
 
-      if (mode === "edit" && result.assumptions != null) {
-        onResult?.({ assumptions: result.assumptions, hasCode: result.hasCode });
+      if (result.hasCode != null) {
+        onResult?.({ hasCode: result.hasCode, messages: result.messages });
       }
+    } catch (e) {
+      onError?.(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCreateTests = async () => {
+    if (sending || !suiteId) return;
+
+    setSending(true);
+    onError?.("");
+
+    try {
+      const result = await sendChatMessage(suiteId, {
+        mode: "create",
+        content: "Create tests from the discussed flow",
+        testContext: testContext || {},
+      });
+
+      setMessages(result.messages || []);
+      onResult?.({ hasCode: result.hasCode ?? false, messages: result.messages });
     } catch (e) {
       onError?.(e.message);
     } finally {
@@ -102,9 +121,9 @@ export default function ChatPanel({
         }}
       >
         <span style={{ fontSize: "12px", color: "var(--text-muted)", fontWeight: 500 }}>
-          {hasCode ? "Edit Test" : "Describe Your Test"}
+          {inConversation ? "Flow Discussion" : hasCode ? "Edit Test" : "Describe Your Test"}
         </span>
-        <div style={{ display: "flex", gap: "0.25rem" }}>
+        {!inConversation && <div style={{ display: "flex", gap: "0.25rem" }}>
           <button
             onClick={() => setMode("edit")}
             style={{
@@ -135,7 +154,7 @@ export default function ChatPanel({
           >
             Ask
           </button>
-        </div>
+        </div>}
       </div>
 
       <div
@@ -163,7 +182,7 @@ export default function ChatPanel({
             {mode === "edit"
               ? hasCode
                 ? 'Describe what to change, e.g. "Add discount validation with a 50% cap"'
-                : 'Describe the test to create, e.g. "Validate order totals including ticket counts"'
+                : 'Record a flow or describe the test to create'
               : 'Ask a question about the test, e.g. "How is ticket count calculated?"'}
           </div>
         )}
@@ -175,7 +194,7 @@ export default function ChatPanel({
               maxWidth: "90%",
               padding: "0.4rem 0.6rem",
               borderRadius: 6,
-              background: m.role === "user" ? "rgba(88, 166, 255, 0.15)" : "rgba(255,255,255,0.05)",
+              background: m.role === "user" ? "rgba(58, 175, 169, 0.15)" : "rgba(255,255,255,0.05)",
               border: "1px solid var(--border)",
               fontSize: "13px",
             }}
@@ -201,39 +220,19 @@ export default function ChatPanel({
         ))}
       </div>
 
-      {assumptions?.length > 0 && (
-        <div
-          style={{
-            borderTop: "1px solid var(--border)",
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-          }}
-        >
-          <AssumptionChecklist
-            assumptions={assumptions}
-            confirmedSet={confirmedSet}
-            onConfirm={onConfirm}
-            onCorrection={onCorrection}
-            onConfirmAll={onConfirmAll}
-            refining={refining}
-            embedded
-          />
-        </div>
-      )}
-
       <div style={{ padding: "0.5rem", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            mode === "edit"
-              ? hasCode
-                ? 'Describe what to change...'
-                : 'Describe the test to create...'
-              : 'Ask a question about the test...'
+            inConversation
+              ? "Reply to the assistant..."
+              : mode === "edit"
+                ? hasCode
+                  ? "Describe what to change..."
+                  : "Describe the test to create..."
+                : "Ask a question about the test..."
           }
           rows={2}
           style={{
@@ -245,14 +244,32 @@ export default function ChatPanel({
           }}
           disabled={sending}
         />
-        <button
-          className="btn"
-          onClick={handleSend}
-          disabled={sending || !input.trim()}
-          style={{ width: "100%", marginTop: "0.5rem", fontSize: "13px" }}
-        >
-          {sending ? "..." : mode === "edit" ? (hasCode ? "Edit Test" : "Generate Test") : "Ask"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+          <button
+            className="btn"
+            onClick={handleSend}
+            disabled={sending || !input.trim()}
+            style={{ flex: 1, fontSize: "13px" }}
+          >
+            {sending
+              ? "..."
+              : inConversation
+                ? "Send"
+                : mode === "edit"
+                  ? hasCode ? "Edit Test" : "Generate Test"
+                  : "Ask"}
+          </button>
+          {(inConversation || (hasCode && hasMcpContext)) && (
+            <button
+              className="btn"
+              onClick={handleCreateTests}
+              disabled={sending}
+              style={{ flex: 1, fontSize: "13px" }}
+            >
+              {sending ? "Creating..." : hasCode ? "Regenerate Tests" : "Create Tests"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

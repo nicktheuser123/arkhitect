@@ -2,11 +2,16 @@ import { adminClient, createUserClient } from "../db/supabase.js";
 
 export async function requireAuth(req, res, next) {
   const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
+  const queryToken = req.query?.token;
+  let token;
+
+  if (header && header.startsWith("Bearer ")) {
+    token = header.slice(7);
+  } else if (queryToken) {
+    token = queryToken;
+  } else {
     return res.status(401).json({ error: "Missing or invalid Authorization header" });
   }
-
-  const token = header.slice(7);
 
   try {
     const { data: { user }, error } = await adminClient.auth.getUser(token);

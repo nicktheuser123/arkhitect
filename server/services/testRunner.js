@@ -43,32 +43,34 @@ async function executeInIsolate(calculatorCode, entityId, config) {
       config.bubble_api_token
     );
 
-    await jail.set(
-      "_getThing",
-      new ivm.Callback(
-        async (type, id) => {
-          const result = await bubble.getThing(type, id);
-          return new ivm.ExternalCopy(result).copyInto();
-        },
-        { async: true }
-      )
-    );
+    const getThingRef = new ivm.Reference(async function (type, id) {
+      try {
+        const result = await bubble.getThing(type, id);
+        return JSON.parse(JSON.stringify(result));
+      } catch (err) {
+        const msg = `getThing("${type}", "${id}") failed: ${err.message}`;
+        logs.push("__ARKHITECT_EXEC_ERROR__ " + msg);
+        return { __error: msg };
+      }
+    });
 
-    await jail.set(
-      "_searchThings",
-      new ivm.Callback(
-        async (type, constraints, limit) => {
-          const result = await bubble.searchThings(
-            type,
-            constraints || [],
-            limit || 100
-          );
-          return new ivm.ExternalCopy(result).copyInto();
-        },
-        { async: true }
-      )
-    );
+    const searchThingsRef = new ivm.Reference(async function (type, constraints, limit) {
+      try {
+        const result = await bubble.searchThings(
+          type,
+          constraints || [],
+          limit || 100
+        );
+        return JSON.parse(JSON.stringify(result));
+      } catch (err) {
+        const msg = `searchThings("${type}") failed: ${err.message}`;
+        logs.push("__ARKHITECT_EXEC_ERROR__ " + msg);
+        return { __error: msg };
+      }
+    });
 
+    await jail.set("_getThingRef", getThingRef);
+    await jail.set("_searchThingsRef", searchThingsRef);
     await jail.set("ENTITY_ID", entityId);
 
     await context.eval(`
@@ -79,17 +81,33 @@ async function executeInIsolate(calculatorCode, entityId, config) {
           _log.apply(undefined, args);
         }
       };
-      function getThing(type, id) { return _getThing(type, id); }
-      function searchThings(type, constraints, limit) {
-        return _searchThings(type, constraints || [], limit || 100);
+      async function getThing(type, id) {
+        var r = await _getThingRef.apply(undefined, [type, id], { result: { promise: true, copy: true } });
+        if (r && r.__error) throw new Error(r.__error);
+        return r;
+      }
+      async function searchThings(type, constraints, limit) {
+        var r = await _searchThingsRef.apply(undefined, [type, constraints || [], limit || 100], { result: { promise: true, copy: true } });
+        if (r && r.__error) throw new Error(r.__error);
+        return r;
       }
     `);
 
-    const wrappedCode = "(async function() {\n" + calculatorCode + "\n})()";
-    await context.eval(wrappedCode, {
-      timeout: EXEC_TIMEOUT_MS,
-      result: { promise: true },
-    });
+    const wrappedCode = `(async function() {
+  try {
+${calculatorCode}
+  } catch(__err) {
+    console.log("__ARKHITECT_EXEC_ERROR__ " + (__err && __err.message ? __err.message : String(__err)));
+  }
+})()`;
+    try {
+      await context.eval(wrappedCode, {
+        timeout: EXEC_TIMEOUT_MS,
+        promise: true,
+      });
+    } catch (evalErr) {
+      logs.push("__ARKHITECT_EXEC_ERROR__ " + (evalErr.message || String(evalErr)));
+    }
 
     const stdout = logs.join("\n");
     return { stdout, stderr: "" };
@@ -129,7 +147,7 @@ export async function executeTest(runId, suite, entityId, config) {
     }
 
     const exec = await executeInIsolate(calculatorCode, entityId, config);
-    const logs = [exec.stdout, exec.stderr].filter(Boolean).join("\n");
+    let logs = [exec.stdout, exec.stderr].filter(Boolean).join("\n");
     const traceSteps = parseTraceSteps(exec.stdout);
 
     let expected_vs_received = [];
@@ -138,6 +156,7 @@ export async function executeTest(runId, suite, entityId, config) {
     let status = "error";
 
     const match = logs.match(/__ARKHITECT_RESULT__\s*(\{[\s\S]*?\})\s*$/);
+    const execError = logs.match(/__ARKHITECT_EXEC_ERROR__\s*(.+)/);
     if (match) {
       try {
         const parsed = JSON.parse(match[1]);
@@ -149,6 +168,9 @@ export async function executeTest(runId, suite, entityId, config) {
       } catch (_) {
         status = "error";
       }
+    } else if (execError) {
+      status = "error";
+      logs += `\n__ARKHITECT_ERROR__ Test code threw an error: ${execError[1]}`;
     } else if (exec.stderr) {
       status = "error";
     } else {

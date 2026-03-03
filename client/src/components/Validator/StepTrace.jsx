@@ -105,7 +105,7 @@ function AssertionResults({ data, onFeedback }) {
           <div key={i} style={{
             padding: "0.5rem 0.6rem",
             borderBottom: "1px solid var(--border)",
-            background: passed ? "rgba(63, 185, 80, 0.04)" : "rgba(248, 81, 73, 0.06)",
+            background: passed ? "rgba(23, 177, 105, 0.04)" : "rgba(248, 81, 73, 0.06)",
           }}>
             <div style={{
               display: "flex",
@@ -260,9 +260,9 @@ function EntityTypeBadge({ entityType, count }) {
       fontSize: "10px",
       fontWeight: 600,
       fontFamily: "monospace",
-      background: "rgba(88, 166, 255, 0.12)",
+      background: "rgba(58, 175, 169, 0.12)",
       color: "var(--accent)",
-      border: "1px solid rgba(88, 166, 255, 0.25)",
+      border: "1px solid rgba(58, 175, 169, 0.25)",
       flexShrink: 0,
       letterSpacing: "0.01em",
     }}>
@@ -297,7 +297,7 @@ function StepCard({ step, stepNum, defaultExpanded, onFeedback }) {
           width: 20,
           height: 20,
           borderRadius: "50%",
-          background: "rgba(88, 166, 255, 0.15)",
+          background: "rgba(58, 175, 169, 0.15)",
           color: "var(--accent)",
           display: "flex",
           alignItems: "center",

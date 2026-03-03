@@ -11,6 +11,7 @@ export default function ValidatorHeader({
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [newSuiteName, setNewSuiteName] = useState("");
+  const [newSuiteUrl, setNewSuiteUrl] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -22,11 +23,15 @@ export default function ValidatorHeader({
     setCreating(true);
     setError("");
     try {
-      const suite = await createTestSuite({ name: newSuiteName.trim() });
+      const suite = await createTestSuite({
+        name: newSuiteName.trim(),
+        bubble_app_url: newSuiteUrl.trim() || null,
+      });
       const refreshed = await getTestSuites();
       setSuites(refreshed);
       setSelectedSuite(suite.id);
       setNewSuiteName("");
+      setNewSuiteUrl("");
       setModalOpen(false);
     } catch (e) {
       setError(e.message);
@@ -109,6 +114,15 @@ export default function ValidatorHeader({
                 placeholder="e.g. Order Validation"
                 value={newSuiteName}
                 onChange={(e) => setNewSuiteName(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label>Bubble App URL (for recording)</label>
+              <input
+                type="url"
+                placeholder="e.g. https://myapp.bubbleapps.io"
+                value={newSuiteUrl}
+                onChange={(e) => setNewSuiteUrl(e.target.value)}
               />
             </div>
             {error && (
