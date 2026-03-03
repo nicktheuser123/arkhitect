@@ -4,19 +4,9 @@ import {
   editTestCode,
   askAboutTest,
 } from "../services/llm.js";
+import { loadLLMConfig } from "../services/configLoader.js";
 
 const router = Router();
-
-async function loadLLMConfig(supabase) {
-  const { data, error } = await supabase
-    .from("configs")
-    .select("key, value")
-    .in("key", ["llm_api_base", "llm_api_key", "llm_model"]);
-  if (error) return null;
-  const cfg = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
-  if (!cfg.llm_api_base || !cfg.llm_api_key || !cfg.llm_model) return null;
-  return cfg;
-}
 
 async function loadSuiteCode(supabase, suiteId) {
   const { data, error } = await supabase
@@ -26,14 +16,6 @@ async function loadSuiteCode(supabase, suiteId) {
     .single();
   if (error) throw error;
   return data?.calculator_code || "";
-}
-
-async function saveSuiteCode(supabase, suiteId, code) {
-  const { error } = await supabase
-    .from("test_suites")
-    .update({ calculator_code: code, updated_at: new Date().toISOString() })
-    .eq("id", suiteId);
-  if (error) throw error;
 }
 
 router.post("/generate", async (req, res) => {
@@ -66,7 +48,11 @@ router.post("/edit", async (req, res) => {
     const result = await editTestCode(cfg.llm_api_base, cfg.llm_api_key, cfg.llm_model, code, instruction);
 
     if (result.code) {
-      await saveSuiteCode(req.supabase, suiteId, result.code);
+      const { error: uErr } = await req.supabase
+        .from("test_suites")
+        .update({ calculator_code: result.code, updated_at: new Date().toISOString() })
+        .eq("id", suiteId);
+      if (uErr) throw uErr;
     }
 
     res.json({ changeDescription: result.changeDescription });

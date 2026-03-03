@@ -15,7 +15,7 @@ Arkhitect is a validation SaaS that lets users configure Bubble.io API credentia
 | Backend | Node.js, Express |
 | Database | Supabase (PostgreSQL) |
 | Code Execution | isolated-vm (V8 isolate sandbox) |
-| External APIs | Bubble Data API, Cursor Cloud Agents API |
+| External APIs | Bubble Data API, Buildprint MCP |
 
 ---
 
@@ -27,13 +27,12 @@ arkhitect/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Layout.jsx       # 60% centered column
-│   │   │   ├── Tabs.jsx         # Main tabs: Setup | Validator
 │   │   │   ├── Setup.jsx        # Onboarding tab
 │   │   │   ├── Auth.jsx         # Authentication
 │   │   │   ├── Validator.jsx    # Main validator orchestrator
 │   │   │   └── Validator/
-│   │   │       ├── ChatPanel.jsx          # LLM chat interface (Edit/Ask)
-│   │   │       ├── AssumptionChecklist.jsx # Review AI assumptions
+│   │   │       ├── ChatPanel.jsx          # LLM chat interface (Edit/Ask/Create)
+│   │   │       ├── RecordFlow.jsx         # Record flow via Playwright, Buildprint MCP
 │   │   │       ├── TestRunner.jsx         # Run tests, display results
 │   │   │       ├── StepTrace.jsx          # Step-by-step trace visualization
 │   │   │       ├── ValidatorHeader.jsx    # Suite selector + entity ID
@@ -56,18 +55,19 @@ arkhitect/
 │   ├── middleware/
 │   │   └── auth.js         # JWT auth middleware
 │   ├── routes/
-│   │   ├── config.js       # CRUD for setup/credentials
-│   │   ├── testSuites.js   # CRUD for test suites + confirm endpoint
+│   │   ├── config.js       # CRUD for setup/credentials, Buildprint apps
+│   │   ├── testSuites.js   # CRUD for test suites
 │   │   ├── testRuns.js     # Run tests, store results
-│   │   ├── ai.js           # LLM generate/edit/refine/ask
-│   │   ├── chat.js         # Chat message handling
+│   │   ├── ai.js           # LLM generate/edit/ask
+│   │   ├── chat.js         # Chat message handling (edit/ask/create)
 │   │   ├── codeVersions.js # Version history
-│   │   └── cursor.js       # Cursor Cloud Agents API proxy
+│   │   └── recorder.js     # Recording flow (Playwright + Buildprint MCP)
 │   ├── services/
 │   │   ├── bubbleClient.js # Bubble API calls (server-side)
 │   │   ├── testRunner.js   # Test execution via isolated-vm
 │   │   ├── llm.js          # LLM integration (code generation)
-│   │   └── cursorAgent.js  # Cursor API integration
+│   │   ├── buildprint.js   # Buildprint MCP integration
+│   │   └── recorder.js     # Playwright codegen recording
 │   ├── index.js
 │   └── package.json
 └── ARCHITECTURE.md
@@ -171,7 +171,6 @@ Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`
 | POST | /api/test-suites | Create suite |
 | GET | /api/test-suites/:id | Get one suite |
 | PUT | /api/test-suites/:id | Update suite |
-| POST | /api/test-suites/:id/confirm | Confirm assumptions, create version |
 | DELETE | /api/test-suites/:id | Delete suite |
 
 ### Test Runs
@@ -188,7 +187,6 @@ Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`
 |--------|------|-------------|
 | POST | /api/ai/generate | Generate test code from prompt |
 | POST | /api/ai/edit | Edit code (reads from DB via suiteId) |
-| POST | /api/ai/refine | Refine code based on assumption corrections |
 | POST | /api/ai/ask | Ask question about test code |
 
 ### Chat
@@ -196,7 +194,7 @@ Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | /api/chat/:suiteId | Get chat messages |
-| POST | /api/chat/:suiteId/send | Send message (edit/ask mode) |
+| POST | /api/chat/:suiteId/send | Send message (edit/ask/create mode) |
 
 ### Code Versions
 
@@ -205,6 +203,15 @@ Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`
 | GET | /api/test-suites/:id/versions | List versions |
 | GET | /api/test-suites/:id/versions/:vid | Get specific version |
 | POST | /api/test-suites/:id/versions/:vid/restore | Restore version |
+
+### Recorder
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | /api/recorder/start | Start Playwright recording (suiteId) |
+| GET | /api/recorder/:sessionId/events | SSE stream for recording status |
+| POST | /api/recorder/:sessionId/stop | Stop recording |
+| POST | /api/recorder/:sessionId/analyze | Analyze recording with Buildprint MCP |
 
 ---
 
@@ -223,19 +230,16 @@ Stores per-user configuration (key-value). UNIQUE constraint on `(key, user_id)`
 ### Tab 2: Validator
 
 - **Header**: Test Suite dropdown, Entity ID input, Add Suite button.
-- **Left Panel**: ChatPanel (Edit/Ask modes) + AssumptionChecklist + VersionHistory
+- **Left Panel**: RecordFlow (record Bubble app) + ChatPanel (Edit/Ask/Create) + VersionHistory
 - **Right Panel**: TestRunner + StepTrace
 
 #### User Flow
 
-1. User describes the test in ChatPanel (Edit mode)
+1. User records a flow (RecordFlow) or describes the test in ChatPanel (Edit mode)
 2. LLM generates test code (server-side, never shown to user)
-3. AssumptionChecklist shows assumptions for review
-4. User confirms or corrects assumptions
-5. On confirm → code version is created
-6. User runs test with an Entity ID
-7. StepTrace shows fetch → calculation → assertion steps
-8. User verifies results, provides feedback if needed
+3. User runs test with an Entity ID
+4. StepTrace shows fetch → calculation → assertion steps
+5. User verifies results, provides feedback if needed
 
 ---
 

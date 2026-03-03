@@ -1,12 +1,12 @@
 # Calculation Logic (Flowchart)
 
-**Update this file whenever orderCalculator.js, order.test.js, or reportingDaily.test.js calculation logic changes.**
+**Update this file whenever `server/db/templates/orderValidation.js.txt` or `server/db/templates/reportingDaily.js.txt` calculation logic changes.**
 
 ---
 
 ## Part 1: Order Validation
 
-**Source:** `orderCalculator.js`, `order.test.js`
+**Source:** `server/db/templates/orderValidation.js.txt`
 
 ### Add-on processing flow
 
@@ -80,13 +80,13 @@ flowchart TD
 
 ## Part 2: ReportingDaily Validation
 
-**Source:** `reportingDaily.test.js`
+**Source:** `server/db/templates/reportingDaily.js.txt`
 
 ### Data fetch flow
 
 ```mermaid
 flowchart TD
-    A[Seed: getThing GP_Order, ORDER_ID] --> B[Read Date Label + Event]
+    A[Seed: getThing GP_Order, ENTITY_ID] --> B[Read Date Label + Event]
     B --> C[Orders: search GP_Order]
     B --> D[ReportingDaily: search GP_ReportingDaily]
     C --> E[constraints: Date Label + Event + Order Status = Paid]
@@ -185,7 +185,7 @@ donations_net = donations_total
 
 ## Part 3: GP_ReportingTicketTypeDaily Validation
 
-**Source:** `reportingDaily.test.js`  
+**Source:** `server/db/templates/reportingDaily.js.txt`  
 **Workflow:** gp_r_ticket_daily_updater — one record per Ticket add-on.
 
 ### Per-addon mapping (workflow → our calc)
@@ -229,7 +229,7 @@ flowchart LR
 
 ## Part 4: GP_ReportingCustomFeeDaily Validation
 
-**Source:** `reportingDaily.test.js`  
+**Source:** `server/db/templates/reportingDaily.js.txt`  
 **Workflow:** gp_r_customfee_daily_updater — one record per (order + Fee Type).
 
 ### Per-fee-type mapping (workflow)

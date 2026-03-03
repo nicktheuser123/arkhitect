@@ -67,10 +67,8 @@ export default function RecordFlow({ suiteId, bubbleAppUrl, onAnalyzed, onError 
       es.onerror = () => {
         es.close();
         eventSourceRef.current = null;
-        if (state !== STATES.COMPLETED && state !== STATES.ERROR) {
-          setState(STATES.ERROR);
-          setErrorMsg("Connection to recording session lost.");
-        }
+        setState(STATES.ERROR);
+        setErrorMsg("Connection to recording session lost.");
       };
     } catch (e) {
       setState(STATES.ERROR);

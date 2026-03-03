@@ -85,14 +85,6 @@ export async function getTestRun(id) {
   return authFetch(`${API}/test-runs/${id}`);
 }
 
-export async function generateCode(prompt) {
-  return authFetch(`${API}/ai/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  });
-}
-
 export async function editCode(suiteId, instruction) {
   return authFetch(`${API}/ai/edit`, {
     method: "POST",

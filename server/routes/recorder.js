@@ -3,6 +3,7 @@ import {
   startRecording,
   getSession,
   onComplete,
+  removeOnComplete,
   stopRecording,
   cleanupSession,
 } from "../services/recorder.js";
@@ -83,7 +84,9 @@ router.get("/:sessionId/events", (req, res) => {
     return;
   }
 
-  req.on("close", () => {});
+  req.on("close", () => {
+    removeOnComplete(sessionId, sendEvent);
+  });
 });
 
 router.post("/:sessionId/stop", (req, res) => {

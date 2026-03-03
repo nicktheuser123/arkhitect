@@ -18,26 +18,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.put("/", async (req, res) => {
-  try {
-    const { key, value } = req.body;
-    if (!key) {
-      return res.status(400).json({ error: "key is required" });
-    }
-    const { error } = await req.supabase
-      .from("configs")
-      .upsert(
-        { key, value: value ?? "", updated_at: new Date().toISOString() },
-        { onConflict: "key,user_id" }
-      );
-    if (error) throw error;
-    res.json({ ok: true });
-  } catch (err) {
-    console.error("Config PUT error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.post("/batch", async (req, res) => {
   try {
     const items = req.body;

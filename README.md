@@ -40,11 +40,3 @@ A minimalist SaaS-style app with:
 5. **Run tests** – Validator → Test Runner → select “Order Validation”, enter order ID, click Run Test
 
 See `ARCHITECTURE.md` for full design and API details.
-
----
-
-## Legacy Files
-
-- `orderCalculator.js` – Reference for Order Validation logic (inlined in seed template)
-- `bubbleClient.js` – Reference for Bubble API usage (injected helpers use fetch)
-- `testConfig.js` – Legacy; config now comes from Setup tab

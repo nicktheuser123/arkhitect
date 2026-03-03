@@ -109,6 +109,12 @@ export function onComplete(sessionId, callback) {
   return true;
 }
 
+export function removeOnComplete(sessionId, callback) {
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  session.listeners = session.listeners.filter((cb) => cb !== callback);
+}
+
 export function stopRecording(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return false;
